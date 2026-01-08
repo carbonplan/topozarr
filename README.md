@@ -8,7 +8,7 @@
 #### Installation
 
 ```bash
-uv 'topozarr @ git+https://github.com/norlandrhagen/topozarr'
+uv add 'topozarr @ git+https://github.com/norlandrhagen/topozarr'
 ```
 
 #### Example
