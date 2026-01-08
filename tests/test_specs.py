@@ -44,7 +44,7 @@ def test_encoding_contains_shards(create_dataset):
     ds = create_dataset(nx=1000, ny=1000)
     pyramid = create_pyramid(ds, levels=1)
 
-    enc = pyramid.encoding["0"]["elevation"]
+    enc = pyramid.encoding["/0"]["elevation"]
     assert "chunks" in enc
     assert "shards" in enc
     assert all(shard >= chunk for shard, chunk in zip(enc["shards"], enc["chunks"]))

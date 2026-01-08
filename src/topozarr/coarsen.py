@@ -60,8 +60,9 @@ def create_pyramid(
         if "spatial_ref" in ds_level.coords:
             ds_level = ds_level.drop_vars("spatial_ref")
 
-        path = str(idx)
-        dt[path] = DataTree(ds_level, name=path)
+        name = str(idx)
+        path = f"/{idx}"
+        dt[path] = DataTree(ds_level, name=name)
         full_encoding[path] = create_level_encoding(
             ds_level,
             x_dim,

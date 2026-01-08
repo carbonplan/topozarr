@@ -32,8 +32,8 @@ def test_chunk_size_overrides(create_dataset):
     pyramid_small = create_pyramid(ds, levels=1, target_chunk_bytes=1024)
     pyramid_large = create_pyramid(ds, levels=1, target_chunk_bytes=10 * 1024 * 1024)
 
-    chunk_small = pyramid_small.encoding["0"]["elevation"]["chunks"]
-    chunk_large = pyramid_large.encoding["0"]["elevation"]["chunks"]
+    chunk_small = pyramid_small.encoding["/0"]["elevation"]["chunks"]
+    chunk_large = pyramid_large.encoding["/0"]["elevation"]["chunks"]
 
     assert chunk_small[0] < chunk_large[0]
 
@@ -48,5 +48,5 @@ def test_shard_size_overrides(create_dataset):
         ds, levels=1, target_chunk_bytes=target, target_shard_bytes=target
     )
 
-    enc = pyramid.encoding["0"]["elevation"]
+    enc = pyramid.encoding["/0"]["elevation"]
     assert enc["chunks"] == enc["shards"]
