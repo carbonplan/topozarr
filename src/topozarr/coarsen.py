@@ -57,19 +57,34 @@ def create_pyramid(
     full_encoding = {}
 
     for idx, ds_level in level_datasets.items():
-        if "spatial_ref" in ds_level.coords:
-            ds_level = ds_level.drop_vars("spatial_ref")
-
         name = str(idx)
         path = f"/{idx}"
-        dt[path] = DataTree(ds_level, name=name)
-        full_encoding[path] = create_level_encoding(
+
+        level_encoding = create_level_encoding(
             ds_level,
             x_dim,
             y_dim,
             target_chunk_bytes=target_chunk_bytes,
             target_shard_bytes=target_shard_bytes,
         )
+
+        dim_chunks = {}
+        for var_name, var_enc in level_encoding.items():
+            if var_name in ds_level.data_vars and "chunks" in var_enc:
+                target_chunks = var_enc["chunks"]
+                da = ds_level[var_name]
+
+                for dim, chunk_size in zip(da.dims, target_chunks):
+                    if dim not in dim_chunks:
+                        dim_chunks[dim] = chunk_size
+                    else:
+                        dim_chunks[dim] = min(dim_chunks[dim], chunk_size)
+
+        if dim_chunks:
+            ds_level = ds_level.chunk(dim_chunks)
+
+        dt[path] = DataTree(ds_level, name=name)
+        full_encoding[path] = level_encoding
 
     dt.attrs = create_multiscale_metadata(levels, crs_str, method, spec=spec)
     return Pyramid(datatree=dt, encoding=full_encoding)

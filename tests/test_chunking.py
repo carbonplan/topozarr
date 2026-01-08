@@ -50,3 +50,27 @@ def test_shard_size_overrides(create_dataset):
 
     enc = pyramid.encoding["/0"]["elevation"]
     assert enc["chunks"] == enc["shards"]
+
+
+def test_dask_chunks_match_encoding(create_dataset):
+    from topozarr.coarsen import create_pyramid
+
+    ds = create_dataset(nx=1000, ny=1000)
+    pyramid = create_pyramid(ds, levels=2, target_chunk_bytes=1024)
+
+    for level_path, level_encoding in pyramid.encoding.items():
+        ds_level = pyramid.datatree[level_path].ds
+
+        for var_name, var_enc in level_encoding.items():
+            if var_name not in ds_level.data_vars:
+                continue
+
+            da = ds_level[var_name]
+            expected_chunks = var_enc["chunks"]
+
+            if hasattr(da.data, "chunksize"):
+                actual_chunks = da.data.chunksize
+                assert actual_chunks == expected_chunks, (
+                    f"lvl {level_path}, var {var_name}: "
+                    f"dask chunks {actual_chunks} do not match the encoding specified chunks {expected_chunks}"
+                )
