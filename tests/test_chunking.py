@@ -75,3 +75,20 @@ def test_dask_chunks_match_shard_encoding(create_dataset):
                     f"Level {level_path}, variable {var_name}: "
                     f"Dask chunks {actual_chunks} don't match encoding shards {expected_shards}"
                 )
+
+
+def test_calculate_shard_size():
+    """calculate_shard_size must return values divisible by chunk_size and less than or equal to the dim_size."""
+    test_cases = [
+        (815, 408, 1618),
+        (128, 64, 512),
+    ]
+
+    for dim_size, chunk_size, ideal_shard in test_cases:
+        shard = calculate_shard_size(dim_size, chunk_size, ideal_shard)
+
+        assert shard % chunk_size == 0, (
+            f"shard {shard} not divisible by chunk {chunk_size}"
+        )
+
+        assert shard <= dim_size, f"shard {shard} exceeds dim {dim_size}"
