@@ -19,4 +19,5 @@ def calculate_shard_size(dim_size: int, chunk_size: int, ideal_shard_dim: int) -
     num_chunks_in_ideal = max(1, ideal_shard_dim // chunk_size)
     total_chunks = math.ceil(dim_size / chunk_size)
     chunks_per_shard = max(1, min(num_chunks_in_ideal, total_chunks))
-    return chunks_per_shard * chunk_size
+    shard_size = chunks_per_shard * chunk_size
+    return min(shard_size, dim_size)

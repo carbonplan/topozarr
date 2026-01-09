@@ -71,14 +71,14 @@ def create_pyramid(
         dim_chunks = {}
         for var_name, var_enc in level_encoding.items():
             if var_name in ds_level.data_vars and "chunks" in var_enc:
-                target_chunks = var_enc["chunks"]
+                target_shards = var_enc["shards"]
                 da = ds_level[var_name]
 
-                for dim, chunk_size in zip(da.dims, target_chunks):
+                for dim, shard_size in zip(da.dims, target_shards):
                     if dim not in dim_chunks:
-                        dim_chunks[dim] = chunk_size
+                        dim_chunks[dim] = shard_size
                     else:
-                        dim_chunks[dim] = min(dim_chunks[dim], chunk_size)
+                        dim_chunks[dim] = min(dim_chunks[dim], shard_size)
 
         if dim_chunks:
             ds_level = ds_level.chunk(dim_chunks)
