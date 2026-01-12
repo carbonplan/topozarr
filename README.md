@@ -8,7 +8,9 @@
 #### Installation
 
 ```bash
-uv add 'topozarr @ git+https://github.com/norlandrhagen/topozarr'
+uv add topozarr
+# or
+pip install topozarr
 ```
 
 #### Example
