@@ -1,6 +1,6 @@
 [project]
 name = "topozarr"
-version = "0.1.0"
+version = "0.0.1"
 description = "Lightweight multiscale zarr"
 readme = "README.md"
 requires-python = ">=3.13"
