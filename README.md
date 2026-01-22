@@ -1,6 +1,7 @@
 # topozarr - lightweight multiscale zarr pyramids
 
 Python library to create multiscale zarr pyramids for usage with [zarr-layer](https://zarr-layer.demo.carbonplan.org/).
+Attempts to follow the WIP [zarr-multiscales spec](https://github.com/zarr-conventions/multiscales).
 
 **Warning: experimental**
 
@@ -32,9 +33,7 @@ pyramid = create_pyramid(
     ds, 
     levels=2, 
     x_dim="lon", 
-    y_dim="lat", 
-    spec="ndpyramid" # or "zarr-multiscales"
-)
+    y_dim="lat")
 print(pyramid.encoding)
 print(pyramid.dt)
 ```
@@ -59,8 +58,6 @@ import icechunk
 storage = icechunk.s3_storage(bucket="<add_your_bucket_name>", prefix="<add_your_prefix>", from_env=True)
 repo = icechunk.Repository.create(storage)
 session = repo.writable_session("main")
-
-result
 
 store = from_url(url = "<add_your_bucket_url>", region="<add_your_region>")
 zstore = ObjectStore(store) 
