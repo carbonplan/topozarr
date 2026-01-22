@@ -2,7 +2,7 @@ from typing import Literal
 import xarray as xr
 from xarray import DataTree
 import xproj  # noqa ignore
-from .metadata import create_level_encoding, create_multiscale_metadata, SpecType
+from .metadata import create_level_encoding, create_multiscale_metadata
 from .pyramid import Pyramid
 from .chunking import DEFAULT_CHUNK_BYTES, DEFAULT_SHARD_BYTES
 
@@ -24,7 +24,6 @@ def build_coarsened_levels(
     x_dim: str,
     y_dim: str,
     method: CoarseningMethod,
-    spec: SpecType = "ndpyramid",
 ) -> dict[int, xr.Dataset]:
     levels = [ds]
     for lvl in range(num_levels - 1):
@@ -34,10 +33,8 @@ def build_coarsened_levels(
         coarsened = curr.coarsen({x_dim: 2, y_dim: 2}, boundary="trim")
         levels.insert(0, getattr(coarsened, method)())
 
-    if spec == "ndpyramid":
-        return dict(enumerate(levels))
-    else:
-        return dict(enumerate(reversed(levels)))
+    # zarr-multiscales: lowest levels = highest resolution (level 0 = highest res)
+    return dict(enumerate(reversed(levels)))
 
 
 def create_pyramid(
@@ -46,12 +43,11 @@ def create_pyramid(
     x_dim: str = "x",
     y_dim: str = "y",
     method: CoarseningMethod = "mean",
-    spec: SpecType = "ndpyramid",
     target_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
     target_shard_bytes: int | None = DEFAULT_SHARD_BYTES,
 ) -> Pyramid:
     crs_str = get_crs(ds)
-    level_datasets = build_coarsened_levels(ds, levels, x_dim, y_dim, method, spec=spec)
+    level_datasets = build_coarsened_levels(ds, levels, x_dim, y_dim, method)
 
     dt = DataTree(name="root")
     full_encoding = {}
@@ -86,5 +82,5 @@ def create_pyramid(
         dt[path] = DataTree(ds_level, name=name)
         full_encoding[path] = level_encoding
 
-    dt.attrs = create_multiscale_metadata(levels, crs_str, method, spec=spec)
+    dt.attrs = create_multiscale_metadata(levels, crs_str, method)
     return Pyramid(datatree=dt, encoding=full_encoding)
