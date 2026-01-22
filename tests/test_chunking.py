@@ -77,6 +77,17 @@ def test_dask_chunks_match_shard_encoding(create_dataset):
                 )
 
 
+def test_disable_sharding(create_dataset):
+    from topozarr.coarsen import create_pyramid
+
+    ds = create_dataset(nx=1000, ny=1000)
+    pyramid = create_pyramid(ds, levels=1, target_shard_bytes=None)
+    enc = pyramid.encoding["/0"]["elevation"]
+
+    assert "chunks" in enc
+    assert "shards" not in enc
+
+
 def test_calculate_shard_size():
     """calculate_shard_size must return values divisible by chunk_size and less than or equal to the dim_size."""
     test_cases = [
