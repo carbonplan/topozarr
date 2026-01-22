@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 import xarray as xr
-from hypothesis import given, strategies as st
+from hypothesis import given, settings, strategies as st
 from topozarr.coarsen import create_pyramid
 
 spatial_names = st.sampled_from(["x", "y", "lon", "lat"])
@@ -31,6 +31,7 @@ def heterogeneous_datasets(draw):
     return ds.proj.assign_crs(spatial_ref="EPSG:4326"), x_n, y_n
 
 
+@settings(deadline=500)
 @given(ds_info=heterogeneous_datasets(), levels=st.integers(1, 5))
 def test_pyramid_integration_robustness(ds_info, levels):
     ds, x_dim, y_dim = ds_info

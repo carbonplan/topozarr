@@ -66,20 +66,46 @@ def _create_var_encoding(
     return var_encoding
 
 
-def create_multiscale_metadata(levels: int, crs: str, method: str) -> dict[str, Any]:
-    layout = [
-        {
+def create_multiscale_metadata(
+    levels: int,
+    crs: str,
+    method: str,
+) -> dict[str, Any]:
+    layout = []
+
+    for i in range(levels):
+        entry = {
             "asset": str(i),
             "transform": {
                 "scale": [float(2**i), float(2**i)],
-                "translation": [0.0, 0.0],
+                "translation": [0.5, 0.5] if i > 0 else [0.0, 0.0],
             },
-            **({"derived_from": str(i - 1)} if i > 0 else {}),
         }
-        for i in range(levels)
-    ]
 
+        if i > 0:
+            entry["derived_from"] = str(i - 1)
+            entry["resampling_method"] = method
+
+        layout.append(entry)
+
+    # attempting to match this example: https://github.com/zarr-conventions/multiscales/blob/main/examples/array-based-pyramid.json
     return {
+        "zarr_conventions": [
+            {
+                "schema_url": "https://raw.githubusercontent.com/zarr-conventions/multiscales/refs/tags/v1/schema.json",
+                "spec_url": "https://github.com/zarr-conventions/multiscales/blob/v1/README.md",
+                "uuid": "d35379db-88df-4056-af3a-620245f8e347",
+                "name": "multiscales",
+                "description": "Multiscale layout of zarr datasets",
+            },
+            {
+                "schema_url": "https://raw.githubusercontent.com/zarr-experimental/geo-proj/refs/tags/v1/schema.json",
+                "spec_url": "https://github.com/zarr-experimental/geo-proj/blob/v1/README.md",
+                "uuid": "f17cb550-5864-4468-aeb7-f3180cfb622f",
+                "name": "proj:",
+                "description": "Coordinate reference system information for geospatial data",
+            },
+        ],
         "multiscales": {"layout": layout, "resampling_method": method},
         "proj:code": crs,
     }
