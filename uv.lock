@@ -755,7 +755,7 @@ wheels = [
 
 [[package]]
 name = "topozarr"
-version = "0.0.2"
+version = "0.0.3"
 source = { editable = "." }
 dependencies = [
     { name = "dask" },
@@ -775,7 +775,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "dask", specifier = ">=2025.12.0" },
+    { name = "dask", specifier = ">=2025.9.0" },
     { name = "xarray", specifier = ">=2025.9.0" },
     { name = "xproj", specifier = ">=0.2.1" },
 ]

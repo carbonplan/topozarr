@@ -48,7 +48,7 @@ def create_pyramid(
     method: CoarseningMethod = "mean",
     spec: SpecType = "ndpyramid",
     target_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
-    target_shard_bytes: int = DEFAULT_SHARD_BYTES,
+    target_shard_bytes: int | None = DEFAULT_SHARD_BYTES,
 ) -> Pyramid:
     crs_str = get_crs(ds)
     level_datasets = build_coarsened_levels(ds, levels, x_dim, y_dim, method, spec=spec)
@@ -71,14 +71,14 @@ def create_pyramid(
         dim_chunks = {}
         for var_name, var_enc in level_encoding.items():
             if var_name in ds_level.data_vars and "chunks" in var_enc:
-                target_shards = var_enc["shards"]
+                dask_chunks = var_enc.get("shards", var_enc["chunks"])
                 da = ds_level[var_name]
 
-                for dim, shard_size in zip(da.dims, target_shards):
+                for dim, chunk_size in zip(da.dims, dask_chunks):
                     if dim not in dim_chunks:
-                        dim_chunks[dim] = shard_size
+                        dim_chunks[dim] = chunk_size
                     else:
-                        dim_chunks[dim] = min(dim_chunks[dim], shard_size)
+                        dim_chunks[dim] = min(dim_chunks[dim], chunk_size)
 
         if dim_chunks:
             ds_level = ds_level.chunk(dim_chunks)

@@ -1,5 +1,6 @@
 # topozarr - lightweight multiscale zarr pyramids
 
+Python library to create multiscale zarr pyramids for usage with [zarr-layer](https://zarr-layer.demo.carbonplan.org/).
 
 **Warning: experimental**
 
@@ -40,15 +41,32 @@ print(pyramid.dt)
 
 ```python
 # Optional: Write to Zarr
-!pip install obstore zarr
+# !pip install obstore zarr
 from obstore.store import from_url
 from zarr.storage import ObjectStore
 
 
 store = from_url(url = "<add_your_bucket_url>", region="<add_your_region>")
 zstore = ObjectStore(store) 
-result_GEOG.dt.to_zarr(zstore, mode="w", encoding = pyramid.encoding, zarr_format=3)
+pyramid.dt.to_zarr(zstore, mode="w", encoding = pyramid.encoding, zarr_format=3)
 ```
+
+```python
+# Optional: Write to Icechunk
+# !pip install icechunk 
+import icechunk
+
+storage = icechunk.s3_storage(bucket="<add_your_bucket_name>", prefix="<add_your_prefix>", from_env=True)
+repo = icechunk.Repository.create(storage)
+session = repo.writable_session("main")
+
+result
+
+store = from_url(url = "<add_your_bucket_url>", region="<add_your_region>")
+zstore = ObjectStore(store) 
+pyramid.dt.to_zarr(session.store, mode="w", encoding = pyramid.encoding, consolidated=False)
+```
+
 
 
 ## Development

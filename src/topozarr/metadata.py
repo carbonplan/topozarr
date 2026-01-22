@@ -17,7 +17,7 @@ def create_level_encoding(
     x_dim: str,
     y_dim: str,
     target_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
-    target_shard_bytes: int = DEFAULT_SHARD_BYTES,
+    target_shard_bytes: int | None = DEFAULT_SHARD_BYTES,
 ) -> dict[str, Any]:
     encoding = {}
     for var_name, da in ds.data_vars.items():
@@ -26,24 +26,32 @@ def create_level_encoding(
 
         itemsize = da.dtype.itemsize
         ideal_chunk = get_ideal_dim(itemsize, target_chunk_bytes)
-        ideal_shard = get_ideal_dim(itemsize, target_shard_bytes)
 
         y_idx, x_idx = da.get_axis_num(y_dim), da.get_axis_num(x_dim)
 
         chunks = list(da.shape)
-        shards = list(da.shape)
+        shards = list(da.shape) if target_shard_bytes is not None else None
 
         for idx, dim_name in [(y_idx, y_dim), (x_idx, x_dim)]:
             c = calculate_chunk_size(da.shape[idx], ideal_chunk)
             chunks[idx] = c
-            shards[idx] = calculate_shard_size(da.shape[idx], c, ideal_shard)
+
+            if shards is not None:
+                ideal_shard = get_ideal_dim(itemsize, target_shard_bytes)
+                shards[idx] = calculate_shard_size(da.shape[idx], c, ideal_shard)
 
         for i, dim in enumerate(da.dims):
             if dim not in [x_dim, y_dim]:
                 chunks[i] = 1
-                shards[i] = 1
+                if shards is not None:
+                    shards[i] = 1
 
-        encoding[var_name] = {"chunks": tuple(chunks), "shards": tuple(shards)}
+        var_encoding = {"chunks": tuple(chunks)}
+        if shards is not None:
+            var_encoding["shards"] = tuple(shards)
+
+        encoding[var_name] = var_encoding
+
     return encoding
 
 
