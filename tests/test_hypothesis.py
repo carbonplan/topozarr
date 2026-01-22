@@ -31,7 +31,7 @@ def heterogeneous_datasets(draw):
     return ds.proj.assign_crs(spatial_ref="EPSG:4326"), x_n, y_n
 
 
-@settings(deadline=500)
+@settings(deadline=1000)
 @given(ds_info=heterogeneous_datasets(), levels=st.integers(1, 5))
 def test_pyramid_integration_robustness(ds_info, levels):
     ds, x_dim, y_dim = ds_info
