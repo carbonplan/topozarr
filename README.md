@@ -81,7 +81,7 @@ uv sync --all-extras
 ### Run linter
 
 ```python
-uv run pre-commit run all-files
+uv run prek run --all-files
 ```
 
 ### Run tests

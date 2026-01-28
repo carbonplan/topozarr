@@ -27,5 +27,5 @@ jobs:
       - name: Install the project
         run: uv sync --all-groups
 
-      - name: Run pre-commit
-        run: uv run pre-commit run --all-files
+      - name: Run prek
+        run: uv run prek run --all-files
