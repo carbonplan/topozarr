@@ -61,3 +61,19 @@ def test_per_level_resampling_method(create_dataset):
 
     assert "resampling_method" not in layout[0]
     assert layout[1]["resampling_method"] == method
+
+
+def test_transform_dims(create_dataset):
+    """Test transforms are created for each dimension"""
+    ds = create_dataset().expand_dims(time=5)
+    pyramid = create_pyramid(ds, levels=2, x_dim="x", y_dim="y")
+
+    l1 = pyramid.dt.attrs["multiscales"]["layout"][1]["transform"]
+
+    dim_map = dict(zip(ds.dims, zip(l1["scale"], l1["translation"])))
+
+    # check scale and translation
+    assert dim_map["time"] == (1.0, 0.0)
+    assert dim_map["x"] == (2.0, 0.5)
+    assert dim_map["y"] == (2.0, 0.5)
+    assert len(l1["scale"]) == len(ds.dims)

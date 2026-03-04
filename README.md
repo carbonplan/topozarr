@@ -9,10 +9,12 @@ Attempts to follow the WIP [zarr-multiscales spec](https://github.com/zarr-conve
 
 #### Installation
 
+You can install the tutorial optional dependency group to run this example.
+
 ```bash
-uv add topozarr
+uv add 'topozarr[tutorial]'
 # or
-pip install topozarr
+pip install 'topozarr[tutorial]'
 ```
 
 #### Example
@@ -23,7 +25,7 @@ import xproj # for crs assignment
 from topozarr.coarsen import create_pyramid
 
 # Load the air_temp tutorial xarray dataset
-ds = xr.tutorial.open_dataset('air_temperature', chunks={})
+ds = xr.tutorial.open_dataset('air_temperature', chunks="auto")
 ds = ds.proj.assign_crs(spatial_ref_crs={"EPSG":4326})
 print(ds)
 ```

@@ -15,8 +15,11 @@ requires = ["uv_build>=0.9.22,<0.10.0"]
 build-backend = "uv_build"
 
 
+[project.optional-dependencies]
+tutorial = ["pooch", "h5netcdf", "icechunk", "obstore"]
 
 [dependency-groups]
+
 test = [
     "hypothesis>=6.150.0",
     "ipdb>=0.13.13",

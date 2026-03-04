@@ -67,28 +67,35 @@ def _create_var_encoding(
 
 
 def create_multiscale_metadata(
+    ds: xr.Dataset,
+    x_dim: str,
+    y_dim: str,
     levels: int,
     crs: str,
     method: str,
 ) -> dict[str, Any]:
-    layout = []
+    spatial_dims = {x_dim, y_dim}
 
-    for i in range(levels):
-        entry = {
+    def get_transform(level: int):
+        # build transform arrays for scale and translation from dataset dimensions.
+        s = [float(2**level) if d in spatial_dims else 1.0 for d in ds.dims]
+        t = [0.5 if (level > 0 and d in spatial_dims) else 0.0 for d in ds.dims]
+        return {"scale": s, "translation": t}
+
+    layout = [
+        {
             "asset": str(i),
-            "transform": {
-                "scale": [float(2**i), float(2**i)],
-                "translation": [0.5, 0.5] if i > 0 else [0.0, 0.0],
-            },
+            "transform": get_transform(i),
+            **(
+                {"derived_from": str(i - 1), "resampling_method": method}
+                if i > 0
+                else {}
+            ),
         }
-
-        if i > 0:
-            entry["derived_from"] = str(i - 1)
-            entry["resampling_method"] = method
-
-        layout.append(entry)
-
+        for i in range(levels)
+    ]
     # attempting to match this example: https://github.com/zarr-conventions/multiscales/blob/main/examples/array-based-pyramid.json
+
     return {
         "zarr_conventions": [
             {
