@@ -78,7 +78,7 @@ def create_multiscale_metadata(
 
     def get_transform(level: int):
         # build transform arrays for scale and translation from dataset dimensions.
-        s = [float(2**level) if d in spatial_dims else 1.0 for d in ds.dims]
+        s = [2.0 if (level > 0 and d in spatial_dims) else 1.0 for d in ds.dims]
         t = [0.5 if (level > 0 and d in spatial_dims) else 0.0 for d in ds.dims]
         return {"scale": s, "translation": t}
 
