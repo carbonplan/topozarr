@@ -66,35 +66,73 @@ def _create_var_encoding(
     return var_encoding
 
 
+def _get_affine_transform(ds: xr.Dataset, x_dim: str, y_dim: str) -> list[float]:
+    """Extract 6-element affine transform [a, b, c, d, e, f] from coordinate arrays.
+
+    Follows Rasterio/spatial: convention: x = a*col + b*row + c, y = d*col + e*row + f,
+    where (0, 0) is the top-left corner of the top-left pixel.
+    """
+    x = ds[x_dim].values
+    y = ds[y_dim].values
+    x_res = float(x[1] - x[0]) if len(x) > 1 else 1.0
+    y_res = float(y[1] - y[0]) if len(y) > 1 else 1.0
+    c = float(x[0]) - 0.5 * x_res  # x-coordinate of top-left pixel corner
+    f = float(y[0]) - 0.5 * y_res  # y-coordinate of top-left pixel corner
+    return [x_res, 0.0, c, 0.0, y_res, f]
+
+
+def _get_spatial_bbox(
+    ds: xr.Dataset, x_dim: str, y_dim: str, transform: list[float]
+) -> list[float]:
+    """Compute [xmin, ymin, xmax, ymax] bounding box from the dataset extent."""
+    x_res, _, c, _, y_res, f = transform
+    nx, ny = ds.sizes[x_dim], ds.sizes[y_dim]
+    xmin = min(c, c + x_res * nx)
+    xmax = max(c, c + x_res * nx)
+    ymin = min(f, f + y_res * ny)
+    ymax = max(f, f + y_res * ny)
+    return [xmin, ymin, xmax, ymax]
+
+
 def create_multiscale_metadata(
     ds: xr.Dataset,
     x_dim: str,
     y_dim: str,
-    levels: int,
+    level_datasets: dict[int, xr.Dataset],
     crs: str,
     method: str,
 ) -> dict[str, Any]:
     spatial_dims = {x_dim, y_dim}
+    levels = len(level_datasets)
+    root_transform = _get_affine_transform(ds, x_dim, y_dim)
 
-    def get_transform(level: int):
-        # build transform arrays for scale and translation from dataset dimensions.
+    def get_multiscales_transform(level: int) -> dict[str, Any]:
+        # scale is relative to derived_from (always 2.0 per coarsening step, not cumulative)
         s = [2.0 if (level > 0 and d in spatial_dims) else 1.0 for d in ds.dims]
         t = [0.5 if (level > 0 and d in spatial_dims) else 0.0 for d in ds.dims]
         return {"scale": s, "translation": t}
 
+    def get_level_spatial_attrs(level: int) -> dict[str, Any]:
+        level_ds = level_datasets[level]
+        level_transform = _get_affine_transform(level_ds, x_dim, y_dim)
+        level_shape = [int(level_ds.sizes[y_dim]), int(level_ds.sizes[x_dim])]
+        return {"spatial:transform": level_transform, "spatial:shape": level_shape}
+
     layout = [
         {
             "asset": str(i),
-            "transform": get_transform(i),
+            "transform": get_multiscales_transform(i),
             **(
                 {"derived_from": str(i - 1), "resampling_method": method}
                 if i > 0
                 else {}
             ),
+            **get_level_spatial_attrs(i),
         }
         for i in range(levels)
     ]
-    # attempting to match this example: https://github.com/zarr-conventions/multiscales/blob/main/examples/array-based-pyramid.json
+
+    # ref: https://github.com/zarr-conventions/multiscales/blob/main/examples/geospatial-pyramid.json
 
     return {
         "zarr_conventions": [
@@ -112,7 +150,18 @@ def create_multiscale_metadata(
                 "name": "proj:",
                 "description": "Coordinate reference system information for geospatial data",
             },
+            {
+                "schema_url": "https://raw.githubusercontent.com/zarr-conventions/spatial/refs/tags/v1/schema.json",
+                "spec_url": "https://github.com/zarr-conventions/spatial/blob/v1/README.md",
+                "uuid": "689b58e2-cf7b-45e0-9fff-9cfc0883d6b4",
+                "name": "spatial:",
+                "description": "Spatial coordinate information",
+            },
         ],
         "multiscales": {"layout": layout, "resampling_method": method},
         "proj:code": crs,
+        "spatial:dimensions": [y_dim, x_dim],
+        "spatial:transform": root_transform,
+        "spatial:bbox": _get_spatial_bbox(ds, x_dim, y_dim, root_transform),
+        "spatial:shape": [int(ds.sizes[y_dim]), int(ds.sizes[x_dim])],
     }

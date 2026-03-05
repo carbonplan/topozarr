@@ -1,7 +1,12 @@
 # topozarr - lightweight multiscale zarr pyramids
 
 Python library to create multiscale zarr pyramids for usage with [zarr-layer](https://zarr-layer.demo.carbonplan.org/).
-Attempts to follow the WIP [zarr-multiscales spec](https://github.com/zarr-conventions/multiscales).
+
+Attempts to follow the [GeoZarr spec](https://github.com/zarr-developers/geozarr-spec).
+
+- [multiscales](https://github.com/zarr-conventions/multiscales) — pyramid structure and resolution levels
+- [proj:](https://github.com/zarr-experimental/geo-proj) — coordinate reference system (CRS)
+- [spatial:](https://github.com/zarr-conventions/spatial) — affine transform, bounding box, and dimension names
 
 **Warning: experimental**
 
@@ -89,4 +94,10 @@ uv run pre-commit run all-files
 ### Run tests
 ```
 uv run pytest tests/
+```
+
+### Run conformance tests - test against geozarr spec using geozarr-toolkit (requires `geozarr-toolkit`)
+```
+uv sync --group conformance
+uv run pytest tests/ -m conformance
 ```

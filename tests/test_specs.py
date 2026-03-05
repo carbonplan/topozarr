@@ -1,3 +1,4 @@
+import pytest
 from topozarr.coarsen import create_pyramid
 
 
@@ -44,6 +45,7 @@ def test_zarr_conventions_array(create_dataset):
     convention_names = {conv["name"] for conv in conventions}
     assert "multiscales" in convention_names
     assert "proj:" in convention_names
+    assert "spatial:" in convention_names
 
 
 def test_translation_offsets(create_dataset):
@@ -61,6 +63,58 @@ def test_per_level_resampling_method(create_dataset):
 
     assert "resampling_method" not in layout[0]
     assert layout[1]["resampling_method"] == method
+
+
+def test_spatial_root_attrs(create_dataset):
+    nx, ny = 16, 16
+    pyramid = create_pyramid(create_dataset(nx=nx, ny=ny), levels=2)
+    attrs = pyramid.dt.attrs
+
+    assert attrs["spatial:dimensions"] == ["y", "x"]
+    assert len(attrs["spatial:transform"]) == 6
+    assert len(attrs["spatial:bbox"]) == 4
+    assert attrs["spatial:shape"] == [ny, nx]
+
+    # transform origin should be half a pixel before the first coordinate
+    x_res, _, c, _, y_res, f = attrs["spatial:transform"]
+    assert x_res == pytest.approx(1.0)
+    assert y_res == pytest.approx(1.0)
+    assert c == pytest.approx(-0.5)
+    assert f == pytest.approx(-0.5)
+
+
+def test_spatial_per_level_attrs(create_dataset):
+    levels = 3
+    pyramid = create_pyramid(create_dataset(nx=32, ny=32), levels=levels)
+    layout = pyramid.dt.attrs["multiscales"]["layout"]
+
+    for entry in layout:
+        assert "spatial:transform" in entry
+        assert len(entry["spatial:transform"]) == 6
+        assert "spatial:shape" in entry
+        assert len(entry["spatial:shape"]) == 2
+
+    # each coarser level should have ~2x larger pixel size
+    t0 = layout[0]["spatial:transform"]
+    t1 = layout[1]["spatial:transform"]
+    assert t1[0] == pytest.approx(t0[0] * 2)  # x_res doubles
+    assert t1[4] == pytest.approx(t0[4] * 2)  # y_res doubles
+    # origin (upper-left corner) stays the same
+    assert t1[2] == pytest.approx(t0[2])
+    assert t1[5] == pytest.approx(t0[5])
+
+    # shape halves at each level
+    assert layout[1]["spatial:shape"][0] == layout[0]["spatial:shape"][0] // 2
+    assert layout[2]["spatial:shape"][0] == layout[1]["spatial:shape"][0] // 2
+
+
+@pytest.mark.conformance
+def test_geozarr_toolkit_validation(create_dataset):
+    validate_attrs = pytest.importorskip("geozarr_toolkit").validate_attrs
+    pyramid = create_pyramid(create_dataset(nx=32, ny=32), levels=3)
+    errors = validate_attrs(pyramid.dt.attrs)
+    for convention, errs in errors.items():
+        assert errs == [], f"{convention} validation errors: {errs}"
 
 
 def test_transform_dims(create_dataset):

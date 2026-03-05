@@ -83,7 +83,12 @@ def create_pyramid(
         full_encoding[path] = level_encoding
 
     dt.attrs = create_multiscale_metadata(
-        ds=ds, x_dim=x_dim, y_dim=y_dim, levels=levels, crs=crs_str, method=str(method)
+        ds=ds,
+        x_dim=x_dim,
+        y_dim=y_dim,
+        level_datasets=level_datasets,
+        crs=crs_str,
+        method=str(method),
     )
 
     return Pyramid(datatree=dt, encoding=full_encoding)
