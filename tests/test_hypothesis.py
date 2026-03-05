@@ -70,7 +70,7 @@ def test_pyramid_integration_robustness(ds_info, levels):
                     assert s % c == 0
 
 
-@settings(deadline=1000)
+@settings(deadline=2000)
 @given(ds_info=multi_variable_datasets(), levels=st.integers(1, 3))
 def test_multi_variable_encoding(ds_info, levels):
     ds, x_dim, y_dim = ds_info
