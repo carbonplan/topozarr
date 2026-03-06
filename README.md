@@ -37,13 +37,32 @@ print(ds)
 
 ```python
 pyramid = create_pyramid(
-    ds, 
-    levels=2, 
-    x_dim="lon", 
+    ds,
+    levels=2,
+    x_dim="lon",
     y_dim="lat")
 print(pyramid.encoding)
 print(pyramid.dt)
 ```
+
+#### Chunking
+
+A recommended encoding is returned with the pyramid. You can access it with `.pyramid.encoding`. There are some basic heuristics to try to get chunk sizes of ~500KB for web visualization and shard sizes 4 times the size (configurable). You can tune the size of the shards with the `chunks_per_shard` parameter (default: `4`, giving `16` chunks per shard and ~8MB shards). Valid values are powers of 2: `1, 2, 4, 8, 16, 32`. Larger shards increase memory usage, but decrease the task graph overhead if using Dask.
+
+
+| `chunks_per_shard` | chunks/shard | approx shard size |
+|--------------------|--------------|-------------------|
+| 1 | 1 | ~500KB |
+| 4 | 16 | ~8MB (default) |
+| 8 | 64 | ~32MB |
+| 16 | 256 | ~128MB |
+
+
+```python
+pyramid = create_pyramid(ds, levels=8, x_dim="x", y_dim="y")
+```
+
+Pass `chunks_per_shard=None` to disable sharding entirely.
 
 ```python
 # Optional: Write to Zarr

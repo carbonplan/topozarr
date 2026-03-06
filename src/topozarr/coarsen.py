@@ -4,7 +4,12 @@ from xarray import DataTree
 import xproj  # noqa ignore
 from .metadata import create_level_encoding, create_multiscale_metadata
 from .pyramid import Pyramid
-from .chunking import DEFAULT_CHUNK_BYTES, DEFAULT_SHARD_BYTES
+from .chunking import (
+    DEFAULT_CHUNK_BYTES,
+    DEFAULT_CHUNKS_PER_SHARD,
+    ChunksPerShard,
+    validate_chunks_per_shard,
+)
 
 CoarseningMethod = Literal["mean", "max", "min", "sum"]
 
@@ -44,8 +49,10 @@ def create_pyramid(
     y_dim: str = "y",
     method: CoarseningMethod = "mean",
     target_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
-    target_shard_bytes: int | None = DEFAULT_SHARD_BYTES,
+    chunks_per_shard: ChunksPerShard | None = DEFAULT_CHUNKS_PER_SHARD,
 ) -> Pyramid:
+    if chunks_per_shard is not None:
+        validate_chunks_per_shard(chunks_per_shard)
     crs_str = get_crs(ds)
     level_datasets = build_coarsened_levels(ds, levels, x_dim, y_dim, method)
 
@@ -61,7 +68,7 @@ def create_pyramid(
             x_dim,
             y_dim,
             target_chunk_bytes=target_chunk_bytes,
-            target_shard_bytes=target_shard_bytes,
+            chunks_per_shard=chunks_per_shard,
         )
 
         dim_chunks = {}

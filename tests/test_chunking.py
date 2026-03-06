@@ -4,15 +4,15 @@ from topozarr.chunking import calculate_chunk_size, calculate_shard_size, get_id
 def test_chunk_and_shard_logic():
     itemsize = 4
     ideal_chunk = get_ideal_dim(itemsize, 1 * 1024 * 1024)
-    ideal_shard = get_ideal_dim(itemsize, 10 * 1024 * 1024)
 
     dim_size = 2000
 
     chunk_size = calculate_chunk_size(dim_size, ideal_chunk)
     assert chunk_size == 500
 
-    shard_size = calculate_shard_size(dim_size, chunk_size, ideal_shard)
-    assert shard_size == 1500
+    # chunks_per_shard=2 → 2 chunks per shard dim → shard=1000
+    shard_size = calculate_shard_size(dim_size, chunk_size, 2)
+    assert shard_size == 1000
     assert shard_size % chunk_size == 0
 
 
@@ -20,7 +20,8 @@ def test_small_dimension_handling():
     size = 100
     c = calculate_chunk_size(size, 512)
     assert c == 100
-    s = calculate_shard_size(size, c, 1618)
+    # only 1 complete chunk fits, so shard is capped at 1 chunk regardless of chunks_per_shard
+    s = calculate_shard_size(size, c, 4)
     assert s == 100
 
 
@@ -43,10 +44,8 @@ def test_shard_size_overrides(create_dataset):
 
     ds = create_dataset(nx=1000, ny=1000)
 
-    target = 1 * 1024 * 1024
-    pyramid = create_pyramid(
-        ds, levels=1, target_chunk_bytes=target, target_shard_bytes=target
-    )
+    # chunks_per_shard=1 means shard dim == chunk dim
+    pyramid = create_pyramid(ds, levels=1, chunks_per_shard=1)
 
     enc = pyramid.encoding["/0"]["elevation"]
     assert enc["chunks"] == enc["shards"]
@@ -81,7 +80,7 @@ def test_disable_sharding(create_dataset):
     from topozarr.coarsen import create_pyramid
 
     ds = create_dataset(nx=1000, ny=1000)
-    pyramid = create_pyramid(ds, levels=1, target_shard_bytes=None)
+    pyramid = create_pyramid(ds, levels=1, chunks_per_shard=None)
     enc = pyramid.encoding["/0"]["elevation"]
 
     assert "chunks" in enc
@@ -89,14 +88,14 @@ def test_disable_sharding(create_dataset):
 
 
 def test_calculate_shard_size():
-    """calculate_shard_size must return values divisible by chunk_size and less than or equal to the dim_size."""
+    """calculate_shard_size must return values divisible by chunk_size and <= dim_size."""
     test_cases = [
-        (815, 408, 1618),
-        (128, 64, 512),
+        (815, 408, 4),  # only 1 complete chunk fits → shard=408
+        (128, 64, 4),  # 2 complete chunks fit, capped at 2 → shard=128
     ]
 
-    for dim_size, chunk_size, ideal_shard in test_cases:
-        shard = calculate_shard_size(dim_size, chunk_size, ideal_shard)
+    for dim_size, chunk_size, chunks_per_shard in test_cases:
+        shard = calculate_shard_size(dim_size, chunk_size, chunks_per_shard)
 
         assert shard % chunk_size == 0, (
             f"shard {shard} not divisible by chunk {chunk_size}"
