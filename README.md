@@ -24,12 +24,11 @@ pip install 'topozarr[tutorial]'
 
 #### Example
 ```python
-# !pip install netcdf4 pooch 
 import xarray as xr
 import xproj # for crs assignment
 from topozarr.coarsen import create_pyramid
 
-# Load the air_temp tutorial xarray dataset
+# Load the air_temperature Xarray tutorial dataset
 ds = xr.tutorial.open_dataset('air_temperature', chunks="auto")
 ds = ds.proj.assign_crs(spatial_ref="EPSG:4326")
 print(ds)
