@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 import xarray as xr
-from hypothesis import given, settings, strategies as st
+from hypothesis import assume, given, settings, strategies as st
 from topozarr.coarsen import create_pyramid
 
 spatial_names = st.sampled_from(["x", "y", "lon", "lat", "X", "Y"])
@@ -68,6 +68,61 @@ def test_pyramid_integration_robustness(ds_info, levels):
                 for c, s in zip(enc["chunks"], enc["shards"]):
                     assert c >= 1
                     assert s % c == 0
+
+
+@st.composite
+def spatial_grid_datasets(draw):
+    nx = draw(st.integers(2, 32))
+    ny = draw(st.integers(2, 32))
+    x_res = draw(st.floats(0.1, 10.0, allow_nan=False, allow_infinity=False))
+    y_res = draw(st.floats(0.1, 10.0, allow_nan=False, allow_infinity=False))
+    x0 = draw(st.floats(-100.0, 100.0, allow_nan=False, allow_infinity=False))
+    y0 = draw(st.floats(-100.0, 100.0, allow_nan=False, allow_infinity=False))
+
+    ds = xr.Dataset(
+        {"elevation": (("y", "x"), np.zeros((ny, nx), dtype="f4"))},
+        coords={
+            "x": x0 + np.arange(nx) * x_res,
+            "y": y0 + np.arange(ny) * y_res,
+        },
+    )
+    return ds.proj.assign_crs(spatial_ref="EPSG:4326"), nx, ny, x_res, y_res, x0, y0
+
+
+@settings(deadline=1000)
+@given(ds_info=spatial_grid_datasets(), levels=st.integers(1, 4))
+def test_spatial_transform_invariants(ds_info, levels):
+    """Affine transform, bbox, and per-level shape invariants hold for arbitrary grids."""
+    ds, nx, ny, x_res, y_res, x0, y0 = ds_info
+    assume(min(nx, ny) >= 2 ** (levels - 1))
+
+    pyramid = create_pyramid(ds, levels=levels)
+    attrs = pyramid.dt.attrs
+    layout = attrs["multiscales"]["layout"]
+
+    # root spatial:shape matches dataset
+    assert attrs["spatial:shape"] == [ny, nx]
+
+    # bbox extent matches grid footprint
+    xmin, ymin, xmax, ymax = attrs["spatial:bbox"]
+    assert xmax - xmin == pytest.approx(x_res * nx, rel=1e-5)
+    assert ymax - ymin == pytest.approx(y_res * ny, rel=1e-5)
+
+    # transform origin is half a pixel before the first coordinate
+    a, _, c, _, e, f = attrs["spatial:transform"]
+    assert c == pytest.approx(x0 - 0.5 * x_res, rel=1e-5)
+    assert f == pytest.approx(y0 - 0.5 * y_res, rel=1e-5)
+
+    # per-level: spatial:shape matches actual level dataset shape, pixel size doubles
+    for i, entry in enumerate(layout):
+        level_ds = pyramid.dt[str(i)].ds
+        assert entry["spatial:shape"] == [level_ds.sizes["y"], level_ds.sizes["x"]]
+
+        # pixel size doubles per level, but only checkable when >1 pixel exists to
+        # derive a resolution from coordinates (single-pixel levels default to 1.0)
+        if level_ds.sizes["x"] > 1 and level_ds.sizes["y"] > 1:
+            level_x_res = entry["spatial:transform"][0]
+            assert level_x_res == pytest.approx(x_res * (2**i), rel=1e-5)
 
 
 @settings(deadline=2000)

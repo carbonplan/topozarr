@@ -1,6 +1,6 @@
 # topozarr - lightweight multiscale zarr pyramids
 
-Python library to create multiscale zarr pyramids for usage with [zarr-layer](https://zarr-layer.demo.carbonplan.org/).
+Python library to create multiscale Zarr pyramids for usage with [zarr-layer](https://zarr-layer.demo.carbonplan.org/).
 
 Attempts to follow the [GeoZarr spec](https://github.com/zarr-developers/geozarr-spec).
 
@@ -24,14 +24,13 @@ pip install 'topozarr[tutorial]'
 
 #### Example
 ```python
-# !pip install netcdf4 pooch 
 import xarray as xr
 import xproj # for crs assignment
 from topozarr.coarsen import create_pyramid
 
-# Load the air_temp tutorial xarray dataset
+# Load the air_temperature Xarray tutorial dataset
 ds = xr.tutorial.open_dataset('air_temperature', chunks="auto")
-ds = ds.proj.assign_crs(spatial_ref_crs={"EPSG":4326})
+ds = ds.proj.assign_crs(spatial_ref="EPSG:4326")
 print(ds)
 ```
 
@@ -40,7 +39,9 @@ pyramid = create_pyramid(
     ds,
     levels=2,
     x_dim="lon",
-    y_dim="lat")
+    y_dim="lat",
+    method="mean",  # "mean" (default) | "max" | "min" | "sum"
+)
 print(pyramid.encoding)
 print(pyramid.dt)
 ```
@@ -59,7 +60,7 @@ A recommended encoding is returned with the pyramid. You can access it with `.py
 
 
 ```python
-pyramid = create_pyramid(ds, levels=8, x_dim="x", y_dim="y")
+pyramid = create_pyramid(ds, levels=8, x_dim="lon", y_dim="lat")
 ```
 
 Pass `chunks_per_shard=None` to disable sharding entirely.
