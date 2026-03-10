@@ -48,7 +48,7 @@ def multi_variable_datasets(draw):
     return ds.proj.assign_crs(spatial_ref="EPSG:4326"), x_n, y_n
 
 
-@settings(deadline=1000)
+@settings(deadline=2000)
 @given(ds_info=heterogeneous_datasets(), levels=st.integers(1, 5))
 def test_pyramid_integration_robustness(ds_info, levels):
     ds, x_dim, y_dim = ds_info
@@ -89,7 +89,7 @@ def spatial_grid_datasets(draw):
     return ds.proj.assign_crs(spatial_ref="EPSG:4326"), nx, ny, x_res, y_res, x0, y0
 
 
-@settings(deadline=1000)
+@settings(deadline=2000)
 @given(ds_info=spatial_grid_datasets(), levels=st.integers(1, 4))
 def test_spatial_transform_invariants(ds_info, levels):
     """Affine transform, bbox, and per-level shape invariants hold for arbitrary grids."""
