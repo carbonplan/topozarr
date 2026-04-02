@@ -36,7 +36,7 @@ def test_custom_dimensions(create_dataset):
 def test_zarr_layer_metadata_written(create_dataset):
     ds = create_dataset()
     config = {"elevation": ZarrLayerVarConfig(clim=[0.0, 1.0], colormap="viridis")}
-    pyramid = create_pyramid(ds, levels=2, zarr_layer=config)
+    pyramid = create_pyramid(ds, levels=2, layer_hints=config)
 
     zarr_layer = pyramid.dt.attrs["zarr-layer"]
     assert zarr_layer["elevation"]["clim"] == [0.0, 1.0]

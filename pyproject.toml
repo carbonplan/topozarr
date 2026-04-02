@@ -19,7 +19,9 @@ build-backend = "uv_build"
 [project.optional-dependencies]
 tutorial = [
     "dask",
+    "icechunk",
     "netcdf4",
+    "obstore",
     "pooch",
     "zarr",
 ]

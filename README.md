@@ -12,7 +12,7 @@ Attempts to follow the [GeoZarr spec](https://github.com/zarr-developers/geozarr
 
 ## Usage
 
-#### Installation
+### Installation
 
 You can install the tutorial optional dependency group to run this example.
 
@@ -22,7 +22,8 @@ uv add 'topozarr[tutorial]'
 pip install 'topozarr[tutorial]'
 ```
 
-#### Example
+### Example
+
 ```python
 import xarray as xr
 import xproj # for crs assignment
@@ -46,10 +47,16 @@ print(pyramid.encoding)
 print(pyramid.dt)
 ```
 
-#### Chunking
+### Chunking
 
-A recommended encoding is returned with the pyramid. You can access it with `.pyramid.encoding`. There are some basic heuristics to try to get chunk sizes of ~500KB for web visualization and shard sizes 4 times the size (configurable). You can tune the size of the shards with the `chunks_per_shard` parameter (default: `4`, giving `16` chunks per shard and ~8MB shards). Valid values are powers of 2: `1, 2, 4, 8, 16, 32`. Larger shards increase memory usage, but decrease the task graph overhead if using Dask.
+`create_pyramid` returns a `Pyramid` with two attributes: `pyramid.dt` (the `DataTree`) and `pyramid.encoding` (recommended chunk and shard sizes per variable per level). Always pass `pyramid.encoding` as the `encoding` argument when writing — this is what applies the chunking strategy to the output store.
 
+```python
+# Inspect the recommended encoding before writing
+print(pyramid.encoding)
+```
+
+The heuristics target ~500KB chunks for web visualization. You can tune shard size with `chunks_per_shard` (default: `4`, giving 16 chunks per shard and ~8MB shards). Valid values are powers of 2: `1, 2, 4, 8, 16, 32`. Larger shards reduce task graph overhead when using Dask but increase memory usage.
 
 | `chunks_per_shard` | chunks/shard | approx shard size |
 |--------------------|--------------|-------------------|
@@ -58,67 +65,65 @@ A recommended encoding is returned with the pyramid. You can access it with `.py
 | 8 | 64 | ~32MB |
 | 16 | 256 | ~128MB |
 
-
-```python
-pyramid = create_pyramid(ds, levels=8, x_dim="lon", y_dim="lat")
-```
-
 Pass `chunks_per_shard=None` to disable sharding entirely.
 
+### Writing
+
+Always pass `pyramid.encoding` to apply the recommended chunking:
+
 ```python
-# Optional: Write to Zarr
-# !pip install obstore zarr
+# Write to Zarr
 from obstore.store import from_url
 from zarr.storage import ObjectStore
 
-
-store = from_url(url = "<add_your_bucket_url>", region="<add_your_region>")
-zstore = ObjectStore(store) 
-pyramid.dt.to_zarr(zstore, mode="w", encoding = pyramid.encoding, zarr_format=3)
+store = ObjectStore(from_url(url="<your_bucket_url>", region="<your_region>"))
+pyramid.dt.to_zarr(store, mode="w", encoding=pyramid.encoding, zarr_format=3)
 ```
 
 ```python
-# Optional: Write to Icechunk
-# !pip install icechunk 
+# Write to Icechunk
 import icechunk
 
-storage = icechunk.s3_storage(bucket="<add_your_bucket_name>", prefix="<add_your_prefix>", from_env=True)
+storage = icechunk.s3_storage(bucket="<your_bucket>", prefix="<your_prefix>", from_env=True)
 repo = icechunk.Repository.create(storage)
 session = repo.writable_session("main")
-
-store = from_url(url = "<add_your_bucket_url>", region="<add_your_region>")
-pyramid.dt.to_zarr(session.store, mode="w", encoding = pyramid.encoding, consolidated=False)
+pyramid.dt.to_zarr(session.store, mode="w", encoding=pyramid.encoding, consolidated=False)
 ```
 
+## Contributing
 
+Clone the repo and install with the `test` dependency group:
 
-## Development
-
-This project uses `uv` for dependency management, `pytest` and `hypothesis` for testing and `ruff` for linting. 
-
-
-### Sync development environment 
-
-```python
-uv sync --all-extras
+```bash
+git clone https://github.com/carbonplan/topozarr
+cd topozarr
+uv sync --group test
 ```
 
+Run tests:
 
-### Run linter
-
-```python
-uv run pre-commit run all-files
+```bash
+uv run pytest -n auto
 ```
 
-### Run tests
-```
-uv run pytest tests/
-```
+Run conformance tests against the GeoZarr spec (requires the `conformance` group):
 
-### Run conformance tests - test against geozarr spec using geozarr-toolkit (requires `geozarr-toolkit`)
-```
+```bash
 uv sync --group conformance
-uv run pytest tests/ -m conformance
+uv run pytest -n auto -m conformance
+```
+
+Lint and format:
+
+```bash
+uv run pre-commit run --all-files
+```
+
+To regenerate the demo datasets in S3 (requires AWS credentials), install the `demo` extra and run the build script:
+
+```bash
+uv sync --extra demo
+uv run python scripts/build_demo_data.py --help
 ```
 
 ## License
@@ -128,5 +133,4 @@ uv run pytest tests/ -m conformance
 
 ## About Us
 
-CarbonPlan is a nonprofit organization that uses data and science for climate action. We aim to improve the transparency and scientific integrity of climate solutions through open data and tools. Find out more at [carbonplan.org](https://carbonplan.org/) or get in touch by [opening an issue](https://github.com/carbonplan/{repo-name}/issues/new) or [sending us an email](mailto:hello@carbonplan.org)
-
+CarbonPlan is a nonprofit organization that uses data and science for climate action. We aim to improve the transparency and scientific integrity of climate solutions through open data and tools. Find out more at [carbonplan.org](https://carbonplan.org/) or get in touch by [opening an issue](https://github.com/carbonplan/topozarr/issues/new) or [sending us an email](mailto:hello@carbonplan.org)
