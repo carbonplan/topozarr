@@ -1,0 +1,55 @@
+name: Build Demo Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'yes' to confirm overwriting existing demo data in S3"
+        required: true
+        default: "no"
+      bucket:
+        description: "S3 bucket name"
+        required: false
+        default: "carbonplan-share"
+      prefix:
+        description: "Key prefix within the bucket"
+        required: false
+        default: "zarr-layer-examples/pipeline/"
+      region:
+        description: "AWS region"
+        required: false
+        default: "us-west-2"
+
+jobs:
+  build:
+    name: Build and upload demo datasets
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.confirm == 'yes' }}
+
+    env:
+      AWS_REGION: ${{ github.event.inputs.region }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --extra demo
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ github.event.inputs.region }}
+
+      - name: Build demo data
+        run: |
+          uv run python scripts/build_demo_data.py \
+            --bucket "${{ github.event.inputs.bucket }}" \
+            --prefix "${{ github.event.inputs.prefix }}" \
+            --region "${{ github.event.inputs.region }}"

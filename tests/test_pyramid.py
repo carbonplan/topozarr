@@ -1,6 +1,7 @@
 # test_pyramid.py
 import pytest
 from topozarr.coarsen import create_pyramid
+from topozarr.metadata import ZarrLayerVarConfig
 
 
 def test_pyramid_datatree_structure(create_dataset):
@@ -30,3 +31,13 @@ def test_custom_dimensions(create_dataset):
 
     assert "lon" in pyramid.dt["1"].ds.dims
     assert pyramid.dt["0"].ds.elevation.shape == (16, 16)
+
+
+def test_zarr_layer_metadata_written(create_dataset):
+    ds = create_dataset()
+    config = {"elevation": ZarrLayerVarConfig(clim=[0.0, 1.0], colormap="viridis")}
+    pyramid = create_pyramid(ds, levels=2, zarr_layer=config)
+
+    zarr_layer = pyramid.dt.attrs["zarr-layer"]
+    assert zarr_layer["elevation"]["clim"] == [0.0, 1.0]
+    assert zarr_layer["elevation"]["colormap"] == "viridis"

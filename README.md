@@ -87,7 +87,6 @@ repo = icechunk.Repository.create(storage)
 session = repo.writable_session("main")
 
 store = from_url(url = "<add_your_bucket_url>", region="<add_your_region>")
-zstore = ObjectStore(store) 
 pyramid.dt.to_zarr(session.store, mode="w", encoding = pyramid.encoding, consolidated=False)
 ```
 

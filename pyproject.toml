@@ -5,7 +5,8 @@ description = "Lightweight multiscale zarr"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "dask>=2025.9.0",
+    "dask>=2025.12.0",
+    "flox",
     "xarray>=2025.9.0",
     "xproj>=0.2.1",
 ]
@@ -16,10 +17,25 @@ build-backend = "uv_build"
 
 
 [project.optional-dependencies]
-tutorial = ["pooch", "h5netcdf","netcdf4", "icechunk", "obstore","s3fs"]
+tutorial = [
+    "dask",
+    "netcdf4",
+    "pooch",
+    "zarr",
+]
+demo = [
+    "boto3",
+    "click",
+    "cloudpathlib[s3]",
+    "dask",
+    "h5netcdf",
+    "icechunk>=1.1.19",
+    "obstore",
+    "virtualizarr",
+    "zarr",
+]
 
 [dependency-groups]
-
 test = [
     "hypothesis>=6.150.0",
     "ipdb>=0.13.13",
@@ -32,9 +48,11 @@ conformance = [
     "geozarr-toolkit>=0.1.1",
     {include-group = "test"},
 ]
-tests = []
 
 [tool.pytest.ini_options]
 markers = [
     "conformance: validate against external spec tools (may be skipped with -m 'not conformance')",
 ]
+
+[tool.uv.sources]
+virtualizarr = { git = "https://github.com/zarr-developers/VirtualiZarr" }

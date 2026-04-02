@@ -2,7 +2,11 @@ from typing import Literal
 import xarray as xr
 from xarray import DataTree
 import xproj  # noqa ignore
-from .metadata import create_level_encoding, create_multiscale_metadata
+from .metadata import (
+    create_level_encoding,
+    create_multiscale_metadata,
+    ZarrLayerVarConfig,
+)
 from .pyramid import Pyramid
 from .chunking import (
     DEFAULT_CHUNK_BYTES,
@@ -50,6 +54,7 @@ def create_pyramid(
     method: CoarseningMethod = "mean",
     target_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
     chunks_per_shard: ChunksPerShard | None = DEFAULT_CHUNKS_PER_SHARD,
+    layer_hints: dict[str, ZarrLayerVarConfig] | None = None,
 ) -> Pyramid:
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
@@ -96,6 +101,7 @@ def create_pyramid(
         level_datasets=level_datasets,
         crs=crs_str,
         method=str(method),
+        layer_hints=layer_hints,
     )
 
     return Pyramid(datatree=dt, encoding=full_encoding)

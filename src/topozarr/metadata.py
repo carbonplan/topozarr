@@ -1,3 +1,4 @@
+from dataclasses import dataclass, asdict
 from typing import Any
 import xarray as xr
 from .chunking import (
@@ -8,6 +9,12 @@ from .chunking import (
     ChunksPerShard,
     get_ideal_dim,
 )
+
+
+@dataclass
+class ZarrLayerVarConfig:
+    clim: list[float] | None = None
+    colormap: str | None = None
 
 
 def create_level_encoding(
@@ -101,6 +108,7 @@ def create_multiscale_metadata(
     level_datasets: dict[int, xr.Dataset],
     crs: str,
     method: str,
+    layer_hints: dict[str, ZarrLayerVarConfig] | None = None,
 ) -> dict[str, Any]:
     spatial_dims = {x_dim, y_dim}
     levels = len(level_datasets)
@@ -164,4 +172,9 @@ def create_multiscale_metadata(
         "spatial:transform": root_transform,
         "spatial:bbox": _get_spatial_bbox(ds, x_dim, y_dim, root_transform),
         "spatial:shape": [int(ds.sizes[y_dim]), int(ds.sizes[x_dim])],
+        **(
+            {"zarr-layer": {k: asdict(v) for k, v in layer_hints.items()}}
+            if layer_hints is not None
+            else {}
+        ),
     }
