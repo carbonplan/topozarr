@@ -47,6 +47,24 @@ print(pyramid.encoding)
 print(pyramid.dt)
 ```
 
+### Visualization hints
+
+Use `layer_hints` to embed colormap and color range hints for [zarr-layer](https://zarr-layer.demo.carbonplan.org/) directly in the pyramid metadata:
+
+```python
+from topozarr.metadata import ZarrLayerVarConfig
+
+pyramid = create_pyramid(
+    ds,
+    levels=2,
+    x_dim="lon",
+    y_dim="lat",
+    layer_hints={"air": ZarrLayerVarConfig(colormap="blues", clim=[230, 310])},
+)
+```
+
+These are written into the root `zarr-layer` metadata key and are optional — omitting `layer_hints` has no effect on the pyramid structure or encoding.
+
 ### Chunking
 
 `create_pyramid` returns a `Pyramid` with two attributes: `pyramid.dt` (the `DataTree`) and `pyramid.encoding` (recommended chunk and shard sizes per variable per level). Always pass `pyramid.encoding` as the `encoding` argument when writing — this is what applies the chunking strategy to the output store.
