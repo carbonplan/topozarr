@@ -4,6 +4,23 @@ import zarr
 import xarray as xr
 
 
+def _level_store(store: Any, level: int) -> tuple[Any, str | None]:
+    """Return (store, group) for accessing a pyramid level subgroup.
+
+    zarr v3 raises ValueError if a path/group argument is passed alongside an
+    FSMap (fsspec) store — the subgroup path must be embedded in the mapper
+    instead.  For all other store types the caller can pass group= as usual.
+    """
+    try:
+        from fsspec.mapping import FSMap
+        if isinstance(store, FSMap):
+            root = store.root.rstrip("/")
+            return store.fs.get_mapper(f"{root}/{level}"), None
+    except ImportError:
+        pass
+    return store, str(level)
+
+
 def write_pyramid(
     pyramid: Any,
     store: Any,
@@ -31,7 +48,7 @@ def write_pyramid(
     pyramid:
         Pyramid created by ``create_pyramid``.
     store:
-        Destination zarr store or path string.
+        Destination zarr store, FSMap, or path string.
     x_dim:
         Name of the x spatial dimension — must match what was passed to ``create_pyramid``.
     y_dim:
@@ -49,16 +66,17 @@ def write_pyramid(
     n_levels = len(pyramid.encoding)
 
     # Write root group and its multiscale/spatial attributes into zarr.json.
+    # zarr v3 accepts FSMap here because no subgroup path is involved.
     root = zarr.open_group(store, mode=mode, zarr_format=zarr_format)
     root.attrs.update(pyramid.dt.attrs)
 
     # Level 0 is the finest resolution — write directly from the pyramid DataTree.
-    enc0 = pyramid.encoding["/0"]
+    level_store, group = _level_store(store, 0)
     pyramid.dt["/0"].ds.to_zarr(
-        store,
-        group="0",
+        level_store,
+        group=group,
         mode="a",
-        encoding=enc0,
+        encoding=pyramid.encoding["/0"],
         zarr_format=zarr_format,
         consolidated=False,
     )
@@ -70,9 +88,9 @@ def write_pyramid(
         enc = pyramid.encoding[f"/{i}"]
         template_ds = pyramid.dt[f"/{i}"].ds
 
-        # Opening from zarr breaks the dask graph chain: the resulting arrays
-        # depend only on the on-disk bytes, not on the previous coarsen graph.
-        prev_ds = xr.open_zarr(store, group=str(i - 1), consolidated=False)
+        # Opening from zarr breaks the dask graph chain.
+        prev_store, prev_group = _level_store(store, i - 1)
+        prev_ds = xr.open_zarr(prev_store, group=prev_group, consolidated=False)
 
         curr_ds = getattr(
             prev_ds.coarsen({x_dim: 2, y_dim: 2}, boundary="trim"), method
@@ -84,9 +102,10 @@ def write_pyramid(
             if var in template_ds:
                 curr_ds[var].attrs = template_ds[var].attrs
 
+        curr_store, curr_group = _level_store(store, i)
         curr_ds.to_zarr(
-            store,
-            group=str(i),
+            curr_store,
+            group=curr_group,
             mode="a",
             encoding=enc,
             zarr_format=zarr_format,
