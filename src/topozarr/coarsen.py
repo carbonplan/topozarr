@@ -104,4 +104,4 @@ def create_pyramid(
         layer_hints=layer_hints,
     )
 
-    return Pyramid(datatree=dt, encoding=full_encoding)
+    return Pyramid(datatree=dt, encoding=full_encoding, x_dim=x_dim, y_dim=y_dim, method=str(method))

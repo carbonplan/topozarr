@@ -8,6 +8,9 @@ from xarray import DataTree
 class Pyramid:
     datatree: DataTree
     encoding: dict[str, Any]
+    x_dim: str = "x"
+    y_dim: str = "y"
+    method: str = "mean"
 
     @property
     def dt(self) -> DataTree:
