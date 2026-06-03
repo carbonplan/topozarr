@@ -1,6 +1,7 @@
 from dataclasses import dataclass, asdict
 from typing import Any
 import xarray as xr
+from pyproj import CRS
 from .chunking import (
     calculate_chunk_size,
     calculate_shard_size,
@@ -129,9 +130,12 @@ def create_multiscale_metadata(
     layout = [
         {
             "asset": str(i),
-            "transform": get_multiscales_transform(i),
             **(
-                {"derived_from": str(i - 1), "resampling_method": method}
+                {
+                    "derived_from": str(i - 1),
+                    "transform": get_multiscales_transform(i),
+                    "resampling_method": method,
+                }
                 if i > 0
                 else {}
             ),
@@ -152,23 +156,25 @@ def create_multiscale_metadata(
                 "description": "Multiscale layout of zarr datasets",
             },
             {
-                "schema_url": "https://raw.githubusercontent.com/zarr-experimental/geo-proj/refs/tags/v1/schema.json",
-                "spec_url": "https://github.com/zarr-experimental/geo-proj/blob/v1/README.md",
+                "schema_url": "https://raw.githubusercontent.com/zarr-conventions/geo-proj/refs/tags/v1/schema.json",
+                "spec_url": "https://github.com/zarr-conventions/geo-proj/blob/v1/README.md",
                 "uuid": "f17cb550-5864-4468-aeb7-f3180cfb622f",
-                "name": "proj:",
+                "name": "proj",
                 "description": "Coordinate reference system information for geospatial data",
             },
             {
                 "schema_url": "https://raw.githubusercontent.com/zarr-conventions/spatial/refs/tags/v1/schema.json",
                 "spec_url": "https://github.com/zarr-conventions/spatial/blob/v1/README.md",
                 "uuid": "689b58e2-cf7b-45e0-9fff-9cfc0883d6b4",
-                "name": "spatial:",
+                "name": "spatial",
                 "description": "Spatial coordinate information",
             },
         ],
         "multiscales": {"layout": layout, "resampling_method": method},
         "proj:code": crs,
+        "proj:wkt2": CRS.from_user_input(crs).to_wkt(),
         "spatial:dimensions": [y_dim, x_dim],
+        "spatial:registration": "pixel",
         "spatial:transform": root_transform,
         "spatial:bbox": _get_spatial_bbox(ds, x_dim, y_dim, root_transform),
         "spatial:shape": [int(ds.sizes[y_dim]), int(ds.sizes[x_dim])],

@@ -16,7 +16,7 @@ def test_translation_offsets(create_dataset):
     pyramid = create_pyramid(create_dataset(), levels=3)
     layout = pyramid.dt.attrs["multiscales"]["layout"]
 
-    assert layout[0]["transform"]["translation"] == [0.0, 0.0]
+    assert "transform" not in layout[0]
     assert layout[1]["transform"]["translation"] == [0.5, 0.5]
 
 
@@ -29,12 +29,22 @@ def test_spatial_root_attrs(create_dataset):
     assert len(attrs["spatial:transform"]) == 6
     assert len(attrs["spatial:bbox"]) == 4
     assert attrs["spatial:shape"] == [ny, nx]
+    assert attrs["spatial:registration"] == "pixel"
 
     x_res, _, c, _, y_res, f = attrs["spatial:transform"]
     assert x_res == pytest.approx(1.0)
     assert y_res == pytest.approx(1.0)
     assert c == pytest.approx(-0.5)
     assert f == pytest.approx(-0.5)
+
+
+def test_proj_attrs(create_dataset):
+    pyramid = create_pyramid(create_dataset(), levels=2)
+    attrs = pyramid.dt.attrs
+
+    assert attrs["proj:code"] == "EPSG:4326"
+    assert isinstance(attrs["proj:wkt2"], str)
+    assert "GEOGCRS" in attrs["proj:wkt2"] or "GEODCRS" in attrs["proj:wkt2"]
 
 
 def test_spatial_per_level_attrs(create_dataset):
