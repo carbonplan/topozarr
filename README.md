@@ -1,4 +1,8 @@
-# topozarr - lightweight multiscale zarr pyramids
+<p align="center">
+  <img src="https://raw.githubusercontent.com/carbonplan/topozarr/main/docs/logo_512x512.png" alt="topozarr" width="200">
+</p>
+
+# lightweight multiscale zarr pyramids
 
 Python library to create multiscale Zarr pyramids for usage with [zarr-layer](https://zarr-layer.demo.carbonplan.org/).
 
@@ -20,7 +24,7 @@ uv add topozarr
 pip install topozarr
 ```
 
-Pyramids are computed by `topozarr-core`, a small Rust kernel (installed automatically as a wheel), and written with `zarr-python` — no . involved. The `tutorial` extra includes everything needed to run the examples below:
+Pyramids are computed by `topozarr-core`, a small Rust kernel (installed automatically as a wheel), and written with `zarr-python` — no Dask involved. The `tutorial` extra includes everything needed to run the examples below:
 
 ```bash
 uv add 'topozarr[tutorial]'

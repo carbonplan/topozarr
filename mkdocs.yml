@@ -6,11 +6,28 @@ repo_name: carbonplan/topozarr
 
 theme:
   name: material
+  font: false
+  logo: logo_512x512.png
+  favicon: logo_512x512.png
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
   features:
     - navigation.sections
     - navigation.top
     - content.code.copy
     - content.code.annotate
+
+extra_css:
+  - stylesheets/extra.css
 
 plugins:
   - search
@@ -21,6 +38,7 @@ plugins:
           options:
             show_source: false
             show_root_heading: true
+            heading_level: 2
             docstring_style: google
 
 nav:
