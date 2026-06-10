@@ -55,6 +55,7 @@ conformance = [
     {include-group = "test"},
 ]
 docs = [
+    "black>=26.5.1",
     "mkdocs-material>=9",
     "mkdocstrings[python]>=0.25",
 ]

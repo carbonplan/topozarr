@@ -19,6 +19,15 @@ class ZarrLayerVarConfig:
     Attributes:
         clim: Color range as ``[min, max]``.
         colormap: Colormap name (e.g. ``"blues"``).
+
+    Examples:
+        ```python
+        create_pyramid(
+            ds,
+            levels=2,
+            layer_hints={"air": ZarrLayerVarConfig(colormap="blues", clim=[230, 310])},
+        )
+        ```
     """
 
     clim: list[float] | None = None

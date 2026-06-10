@@ -75,7 +75,7 @@ from obstore.store import from_url
 from zarr.storage import ObjectStore
 
 store = ObjectStore(
-    from_url("s3://carbonplan-scratch/topozarr/aira.zarr", region="us-west-2")
+    from_url("s3://carbonplan-scratch/topozarr/air.zarr", region="us-west-2")
 )
 pyramid.write(store, mode="w")
 ```

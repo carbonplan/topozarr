@@ -99,7 +99,7 @@ def create_pyramid(
     """Build a multiscale Zarr pyramid plan from a georeferenced Dataset.
 
     Args:
-        ds: Source dataset.  Must have a CRS assigned via ``ds.proj.assign_crs``.
+        ds: Source dataset. Must have a CRS assigned via ``ds.proj.assign_crs``.
         levels: Total number of resolution levels, including the original.
             Level ``0`` is the original resolution; each subsequent level
             coarsens by 2× per spatial dimension.
@@ -108,14 +108,31 @@ def create_pyramid(
         method: Spatial aggregation method for coarsening.
         target_chunk_bytes: Target uncompressed size per chunk (default ~500 KB).
         chunks_per_shard: Number of chunks per shard along each spatial dimension
-            (e.g. ``4`` → 4×4 = 16 chunks per shard, ~8 MB).  Must be a power
-            of 2 in the range 1–32.  Pass ``None`` to disable sharding.
+            (e.g. ``4`` → 4×4 = 16 chunks per shard, ~8 MB). Must be a power
+            of 2 in the range 1–32. Pass ``None`` to disable sharding.
         layer_hints: Optional per-variable colormap / color-range hints written
             into the ``zarr-layer`` root metadata key.
 
     Returns:
-        :class:`Pyramid`; call ``pyramid.write(store)`` to compute and write
-        all levels.
+        A [Pyramid][topozarr.pyramid.Pyramid] write plan; call
+        ``pyramid.write(store)`` to compute and write all levels.
+
+    Raises:
+        ValueError: If ``ds`` has no CRS or ``chunks_per_shard`` is not a
+            power of 2 in the range 1–32.
+
+    Examples:
+        ```python
+        import xarray as xr
+        import xproj  # registers the .proj accessor
+        from topozarr import create_pyramid
+
+        ds = xr.tutorial.open_dataset("air_temperature").drop_encoding()
+        ds = ds.proj.assign_crs(spatial_ref="EPSG:4326")
+
+        pyramid = create_pyramid(ds, levels=2, x_dim="lon", y_dim="lat")
+        pyramid.write("pyramid.zarr")
+        ```
     """
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
