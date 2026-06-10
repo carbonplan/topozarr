@@ -1,20 +1,22 @@
 import pytest
+import xarray as xr
+import zarr
 from topozarr.coarsen import create_pyramid
 
 
 @pytest.mark.parametrize("method", ["mean", "max", "min", "sum"])
 def test_resampling_method(create_dataset, method):
     pyramid = create_pyramid(create_dataset(), levels=3, method=method)
-    layout = pyramid.dt.attrs["multiscales"]["layout"]
+    layout = pyramid.attrs["multiscales"]["layout"]
 
-    assert pyramid.dt.attrs["multiscales"]["resampling_method"] == method
+    assert pyramid.attrs["multiscales"]["resampling_method"] == method
     assert "resampling_method" not in layout[0]
     assert layout[1]["resampling_method"] == method
 
 
 def test_translation_offsets(create_dataset):
     pyramid = create_pyramid(create_dataset(), levels=3)
-    layout = pyramid.dt.attrs["multiscales"]["layout"]
+    layout = pyramid.attrs["multiscales"]["layout"]
 
     assert "transform" not in layout[0]
     assert layout[1]["transform"]["translation"] == [0.5, 0.5]
@@ -23,7 +25,7 @@ def test_translation_offsets(create_dataset):
 def test_spatial_root_attrs(create_dataset):
     nx, ny = 16, 16
     pyramid = create_pyramid(create_dataset(nx=nx, ny=ny), levels=2)
-    attrs = pyramid.dt.attrs
+    attrs = pyramid.attrs
 
     assert attrs["spatial:dimensions"] == ["y", "x"]
     assert len(attrs["spatial:transform"]) == 6
@@ -40,7 +42,7 @@ def test_spatial_root_attrs(create_dataset):
 
 def test_proj_attrs(create_dataset):
     pyramid = create_pyramid(create_dataset(), levels=2)
-    attrs = pyramid.dt.attrs
+    attrs = pyramid.attrs
 
     assert attrs["proj:code"] == "EPSG:4326"
     assert isinstance(attrs["proj:wkt2"], str)
@@ -50,7 +52,7 @@ def test_proj_attrs(create_dataset):
 def test_spatial_per_level_attrs(create_dataset):
     levels = 3
     pyramid = create_pyramid(create_dataset(nx=32, ny=32), levels=levels)
-    layout = pyramid.dt.attrs["multiscales"]["layout"]
+    layout = pyramid.attrs["multiscales"]["layout"]
 
     for entry in layout:
         assert "spatial:transform" in entry
@@ -74,7 +76,7 @@ def test_transform_dims(create_dataset):
     ds = create_dataset().expand_dims(time=5)
     pyramid = create_pyramid(ds, levels=2, x_dim="x", y_dim="y")
 
-    l1 = pyramid.dt.attrs["multiscales"]["layout"][1]["transform"]
+    l1 = pyramid.attrs["multiscales"]["layout"][1]["transform"]
     dim_map = dict(zip(ds.dims, zip(l1["scale"], l1["translation"])))
 
     assert dim_map["time"] == (1.0, 0.0)
@@ -83,12 +85,18 @@ def test_transform_dims(create_dataset):
     assert len(l1["scale"]) == len(ds.dims)
 
 
+def _write_and_open(pyramid):
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+    return xr.open_datatree(store, engine="zarr", consolidated=False)
+
+
 @pytest.mark.conformance
 def test_geozarr_toolkit_detect_conventions(create_dataset):
     """geozarr conventions check"""
     geozarr_toolkit = pytest.importorskip("geozarr_toolkit")
     pyramid = create_pyramid(create_dataset(nx=32, ny=32), levels=3)
-    detected = geozarr_toolkit.detect_conventions(pyramid.dt.attrs)
+    detected = geozarr_toolkit.detect_conventions(pyramid.attrs)
     assert "multiscales" in detected, "multiscales convention not detected"
     assert "spatial" in detected, "spatial convention not detected"
     assert "proj" in detected, "proj convention not detected"
@@ -99,7 +107,8 @@ def test_geozarr_toolkit_per_level_validation(create_dataset):
     """per level validation"""
     validate_attrs = pytest.importorskip("geozarr_toolkit").validate_attrs
     pyramid = create_pyramid(create_dataset(nx=32, ny=32), levels=3)
-    for level_name, level_node in pyramid.dt.children.items():
+    dt = _write_and_open(pyramid)
+    for level_name, level_node in dt.children.items():
         errors = validate_attrs(level_node.attrs)
         for convention, errs in errors.items():
             assert errs == [], (
@@ -112,6 +121,7 @@ def test_geozarr_toolkit_group_validation(create_dataset):
     """validate full pyramid conventions"""
     validate_group = pytest.importorskip("geozarr_toolkit").validate_group
     pyramid = create_pyramid(create_dataset(nx=32, ny=32), levels=3)
-    errors = validate_group(pyramid.dt)
+    dt = _write_and_open(pyramid)
+    errors = validate_group(dt)
     for convention, errs in errors.items():
         assert errs == [], f"{convention} validation errors: {errs}"

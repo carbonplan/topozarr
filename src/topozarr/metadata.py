@@ -14,6 +14,13 @@ from .chunking import (
 
 @dataclass
 class ZarrLayerVarConfig:
+    """Per-variable visualization hints for zarr-layer.
+
+    Attributes:
+        clim: Color range as ``[min, max]``.
+        colormap: Colormap name (e.g. ``"blues"``).
+    """
+
     clim: list[float] | None = None
     colormap: str | None = None
 

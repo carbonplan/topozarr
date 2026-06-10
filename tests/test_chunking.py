@@ -51,29 +51,21 @@ def test_shard_size_overrides(create_dataset):
     assert enc["chunks"] == enc["shards"]
 
 
-def test_dask_chunks_match_shard_encoding(create_dataset):
+def test_written_arrays_match_shard_encoding(create_dataset):
+    import zarr
     from topozarr.coarsen import create_pyramid
 
     ds = create_dataset(nx=1000, ny=1000)
     pyramid = create_pyramid(ds, levels=2, target_chunk_bytes=1024)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
 
-    # Check each level
+    root = zarr.open_group(store, mode="r")
     for level_path, level_encoding in pyramid.encoding.items():
-        ds_level = pyramid.datatree[level_path].ds
-
         for var_name, var_enc in level_encoding.items():
-            if var_name not in ds_level.data_vars:
-                continue
-
-            da = ds_level[var_name]
-            expected_shards = var_enc["shards"]
-
-            if hasattr(da.data, "chunksize"):
-                actual_chunks = da.data.chunksize
-                assert actual_chunks == expected_shards, (
-                    f"Level {level_path}, variable {var_name}: "
-                    f"Dask chunks {actual_chunks} don't match encoding shards {expected_shards}"
-                )
+            arr = root[f"{level_path.lstrip('/')}/{var_name}"]
+            assert arr.chunks == var_enc["chunks"]
+            assert arr.shards == var_enc["shards"]
 
 
 def test_disable_sharding(create_dataset):

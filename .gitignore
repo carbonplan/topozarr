@@ -8,7 +8,23 @@ wheels/
 
 # Virtual environments
 .venv
-# testing
 
+# testing / tooling caches
 *.hypothesis
 *.pytest_cache
+.ruff_cache/
+
+# notebooks
+.ipynb_checkpoints/
+
+# data files
+*.h5
+*.hdf
+*.nc
+*.zarr/
+
+# rust
+core/target/
+
+# docs build output
+site/

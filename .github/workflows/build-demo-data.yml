@@ -3,10 +3,6 @@ name: Build Demo Data
 on:
   workflow_dispatch:
     inputs:
-      confirm:
-        description: "Type 'yes' to confirm overwriting existing demo data in S3"
-        required: true
-        default: "no"
       bucket:
         description: "S3 bucket name"
         required: false
@@ -24,7 +20,6 @@ jobs:
   build:
     name: Build and upload demo datasets
     runs-on: ubuntu-latest
-    if: ${{ github.event.inputs.confirm == 'yes' }}
 
     env:
       AWS_REGION: ${{ github.event.inputs.region }}

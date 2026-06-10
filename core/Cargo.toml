@@ -1,0 +1,18 @@
+[package]
+name = "topozarr-core"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Block-reduction kernel for topozarr pyramid generation"
+
+[lib]
+name = "topozarr_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.28", features = ["extension-module", "abi3-py312"] }
+numpy = "0.28"
+ndarray = { version = "0.17", features = ["rayon"] }
+
+[profile.release]
+lto = true
