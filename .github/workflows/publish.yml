@@ -82,8 +82,10 @@ jobs:
         with:
           subject-path: 'dist/*'
 
+      # --check-url skips files already on PyPI, so re-tagging without a
+      # core version bump does not fail the job
       - name: Publish
-        run: uv publish dist/*
+        run: uv publish --check-url https://pypi.org/simple/ dist/*
 
   publish:
     runs-on: ubuntu-latest
@@ -115,11 +117,20 @@ jobs:
         with:
           subject-path: 'dist/*'
 
+      # resolve topozarr-core from the just-built wheels instead of PyPI,
+      # which may not have propagated the core release yet
+      - name: Download core wheels
+        uses: actions/download-artifact@v4
+        with:
+          pattern: core-wheel-*
+          merge-multiple: true
+          path: core-dist
+
       - name: Smoke test (wheel)
-        run: uv run --isolated --no-project --with dist/*.whl -- python -c "import topozarr; print(topozarr.__version__)"
+        run: uv run --isolated --no-project --find-links core-dist --with dist/*.whl -- python -c "import topozarr; print(topozarr.__version__)"
 
       - name: Smoke test (source distribution)
-        run: uv run --isolated --no-project --with dist/*.tar.gz -- python -c "import topozarr; print(topozarr.__version__)"
+        run: uv run --isolated --no-project --find-links core-dist --with dist/*.tar.gz -- python -c "import topozarr; print(topozarr.__version__)"
 
       - name: Publish
-        run: uv publish dist/topozarr-*
+        run: uv publish --check-url https://pypi.org/simple/ dist/topozarr-*
