@@ -27,13 +27,15 @@ def _to_python(obj: Any) -> Any:
 
 @dataclass
 class Pyramid:
-    """Result of :func:`create_pyramid` — a write plan for a multiscale Zarr pyramid.
+    """A write plan for a multiscale Zarr pyramid, returned by
+    [create_pyramid][topozarr.coarsen.create_pyramid].
 
     Attributes:
         source: The original (level 0) dataset.
         level_templates: Per-level datasets carrying real coordinates and
             attrs; spatial data variables are zero-cost placeholders with the
-            correct shape/dtype (their data is computed during :meth:`write`).
+            correct shape/dtype (their data is computed during
+            [write][topozarr.pyramid.Pyramid.write]).
         encoding: Nested dict ``{path: {var: {"chunks": ..., "shards": ...}}}``.
         attrs: Root group metadata (multiscales / proj: / spatial: / zarr-layer).
     """
@@ -66,16 +68,35 @@ class Pyramid:
         max_workers: int | None = None,
         levels: list[int] | None = None,
     ) -> None:
-        """Write the pyramid to a Zarr store.
+        """Compute and write pyramid levels to a Zarr store.
 
         Level 0 is copied from the source dataset; each subsequent level is
         block-reduced from the previously written level, streaming
-        shard-sized regions through the Rust kernel. ``store`` is anything
-        zarr-python accepts (path, ``ObjectStore``, icechunk session store).
+        shard-sized regions through the Rust kernel on a thread pool.
 
-        ``levels`` restricts which levels are written; defaults to all. When
-        writing a subset (e.g. ``levels=[1, 2]``) use ``mode="a"`` so the
-        root group and any pre-existing levels are preserved.
+        Args:
+            store: Anything zarr-python accepts — a local path,
+                ``ObjectStore``, or icechunk session store.
+            mode: Zarr open mode for the root group. Use ``"a"`` when
+                writing a subset of levels so the root group and any
+                pre-existing levels are preserved.
+            max_workers: Thread pool size for shard processing. ``None``
+                uses the ``ThreadPoolExecutor`` default.
+            levels: Subset of levels to write (e.g. ``[1, 2]``).
+                Defaults to all levels.
+
+        Examples:
+            Write all levels to a local store:
+
+            ```python
+            pyramid.write("pyramid.zarr")
+            ```
+
+            Rewrite the coarsened levels, preserving level 0:
+
+            ```python
+            pyramid.write("pyramid.zarr", mode="a", levels=[1, 2])
+            ```
         """
         root = zarr.open_group(store, mode=mode, zarr_format=3)
         root.attrs.update(self.attrs)
