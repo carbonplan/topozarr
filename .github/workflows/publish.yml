@@ -82,9 +82,21 @@ jobs:
         with:
           subject-path: 'dist/*'
 
-      # --check-url skips files already on PyPI, so re-tagging without a
-      # core version bump does not fail the job
+      # rebuilt wheels are not byte-reproducible, so --check-url alone fails
+      # on re-tags without a core version bump; skip upload entirely if this
+      # core version is already on PyPI
+      - name: Check if core version already on PyPI
+        id: core
+        run: |
+          VERSION=$(ls dist/topozarr_core-*.tar.gz | sed -E 's/.*topozarr_core-(.+)\.tar\.gz/\1/')
+          if curl -fsS "https://pypi.org/pypi/topozarr-core/${VERSION}/json" > /dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish
+        if: steps.core.outputs.exists == 'false'
         run: uv publish --check-url https://pypi.org/simple/ dist/*
 
   publish:
