@@ -79,6 +79,9 @@ def _get_affine_transform(ds: xr.Dataset, x_dim: str, y_dim: str) -> list[float]
 
     Follows Rasterio/spatial: convention: x = a*col + b*row + c, y = d*col + e*row + f,
     where (0, 0) is the top-left corner of the top-left pixel.
+
+    Assumes uniformly spaced coordinates; resolution is taken from the first
+    two values of each coordinate array.
     """
     x = ds[x_dim].values
     y = ds[y_dim].values

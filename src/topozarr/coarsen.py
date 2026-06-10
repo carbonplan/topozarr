@@ -1,7 +1,7 @@
 from typing import Literal
 import xarray as xr
 from xarray import DataTree
-import xproj  # noqa ignore
+import xproj  # noqa: F401 - registers .proj accessor
 from .metadata import (
     create_level_encoding,
     create_multiscale_metadata,
@@ -22,7 +22,8 @@ def get_crs(ds: xr.Dataset) -> str:
     crs = ds.proj.crs
     if not crs:
         raise ValueError(
-            "dataset is missing a crs. Use xproj. ex: ds.proj.assign_crs({'EPSG':4326)."
+            "dataset is missing a crs. Assign one with xproj, "
+            'e.g. ds.proj.assign_crs(spatial_ref="EPSG:4326").'
         )
     return str(crs)
 
@@ -38,7 +39,11 @@ def build_coarsened_levels(
     for lvl in range(num_levels - 1):
         curr = levels[0]
         if curr.sizes[x_dim] < 2 or curr.sizes[y_dim] < 2:
-            raise ValueError(f"cannot coarsen {num_levels}")
+            raise ValueError(
+                f"cannot coarsen to {num_levels} levels: after {lvl} step(s) "
+                f"dimensions are {x_dim}={curr.sizes[x_dim]}, {y_dim}={curr.sizes[y_dim]}; "
+                "both must be >= 2 to coarsen further"
+            )
         coarsened = curr.coarsen({x_dim: 2, y_dim: 2}, boundary="trim")
         levels.insert(0, getattr(coarsened, method)())
 
@@ -56,6 +61,27 @@ def create_pyramid(
     chunks_per_shard: ChunksPerShard | None = DEFAULT_CHUNKS_PER_SHARD,
     layer_hints: dict[str, ZarrLayerVarConfig] | None = None,
 ) -> Pyramid:
+    """Build a multiscale Zarr pyramid from a georeferenced Dataset.
+
+    Args:
+        ds: Source dataset.  Must have a CRS assigned via ``ds.proj.assign_crs``.
+        levels: Total number of resolution levels, including the original.
+            Level ``0`` is the original resolution; each subsequent level
+            coarsens by 2× per spatial dimension.
+        x_dim: Name of the x (longitude / easting) dimension.
+        y_dim: Name of the y (latitude / northing) dimension.
+        method: Spatial aggregation method for coarsening.
+        target_chunk_bytes: Target uncompressed size per chunk (default ~500 KB).
+        chunks_per_shard: Number of chunks per shard along each spatial dimension
+            (e.g. ``4`` → 4×4 = 16 chunks per shard, ~8 MB).  Must be a power
+            of 2 in the range 1–32.  Pass ``None`` to disable sharding.
+        layer_hints: Optional per-variable colormap / color-range hints written
+            into the ``zarr-layer`` root metadata key.
+
+    Returns:
+        :class:`Pyramid` with ``.dt`` (DataTree) and ``.encoding`` ready to
+        pass to ``DataTree.to_zarr(..., encoding=pyramid.encoding)``.
+    """
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
     crs_str = get_crs(ds)

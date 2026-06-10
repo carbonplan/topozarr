@@ -2,10 +2,10 @@
 
 Python library to create multiscale Zarr pyramids for usage with [zarr-layer](https://zarr-layer.demo.carbonplan.org/).
 
-Attempts to follow the [GeoZarr spec](https://github.com/zarr-developers/geozarr-spec).
+Follows these [zarr-conventions](https://github.com/zarr-conventions):
 
 - [multiscales](https://github.com/zarr-conventions/multiscales) — pyramid structure and resolution levels
-- [proj:](https://github.com/zarr-experimental/geo-proj) — coordinate reference system (CRS)
+- [proj:](https://github.com/zarr-conventions/geo-proj) — coordinate reference system (CRS)
 - [spatial:](https://github.com/zarr-conventions/spatial) — affine transform, bounding box, and dimension names
 
 **Warning: experimental**
@@ -14,7 +14,13 @@ Attempts to follow the [GeoZarr spec](https://github.com/zarr-developers/geozarr
 
 ### Installation
 
-You can install the tutorial optional dependency group to run this example.
+```bash
+uv add topozarr
+# or
+pip install topozarr
+```
+
+Note that `zarr` is not a core dependency — install it (or `icechunk`) to write pyramids to storage. The `tutorial` extra includes everything needed to run the examples below:
 
 ```bash
 uv add 'topozarr[tutorial]'
@@ -27,7 +33,7 @@ pip install 'topozarr[tutorial]'
 ```python
 import xarray as xr
 import xproj # for crs assignment
-from topozarr.coarsen import create_pyramid
+from topozarr import create_pyramid
 
 # Load the air_temperature Xarray tutorial dataset
 ds = xr.tutorial.open_dataset('air_temperature', chunks="auto")
@@ -46,6 +52,8 @@ pyramid = create_pyramid(
 print(pyramid.encoding)
 print(pyramid.dt)
 ```
+
+`levels` is the total number of resolution levels, including the original. Level `0` is the original (highest) resolution; each subsequent level is coarsened by a factor of 2 per spatial dimension, so the last level is the coarsest.
 
 ### Visualization hints
 
@@ -74,7 +82,7 @@ These are written into the root `zarr-layer` metadata key and are optional — o
 print(pyramid.encoding)
 ```
 
-The heuristics target ~500KB chunks for web visualization. You can tune shard size with `chunks_per_shard` (default: `4`, giving 16 chunks per shard and ~8MB shards). Valid values are powers of 2: `1, 2, 4, 8, 16, 32`. Larger shards reduce task graph overhead when using Dask but increase memory usage.
+The heuristics target ~500KB chunks for web visualization. You can tune shard size with `chunks_per_shard`, the number of chunks per shard *along each spatial dimension* (default: `4`, giving 4×4 = 16 chunks per shard and ~8MB shards). Valid values are powers of 2: `1, 2, 4, 8, 16, 32`. Larger shards reduce task graph overhead when using Dask but increase memory usage.
 
 | `chunks_per_shard` | chunks/shard | approx shard size |
 |--------------------|--------------|-------------------|
@@ -106,6 +114,7 @@ storage = icechunk.s3_storage(bucket="<your_bucket>", prefix="<your_prefix>", fr
 repo = icechunk.Repository.create(storage)
 session = repo.writable_session("main")
 pyramid.dt.to_zarr(session.store, mode="w", encoding=pyramid.encoding, consolidated=False)
+session.commit("write pyramid")
 ```
 
 ## Contributing

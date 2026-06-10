@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import xarray as xr
-import xproj  # noqa ignore
+import xproj  # noqa: F401 - registers .proj accessor
 
 
 @pytest.fixture

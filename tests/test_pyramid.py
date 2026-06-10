@@ -9,7 +9,7 @@ def test_pyramid_datatree_structure(create_dataset):
     levels = 3
     pyramid = create_pyramid(ds, levels=levels)
 
-    # 0 is coarsest, 2 is original res
+    # 0 is original res, 2 is coarsest
     assert set(pyramid.dt.children) == {"0", "1", "2"}
 
     # shapes go: 16 -> 8 -> 4

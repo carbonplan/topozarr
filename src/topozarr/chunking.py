@@ -1,7 +1,7 @@
 import math
 from typing import Literal
 
-DEFAULT_CHUNK_BYTES = 0.5 * 1024 * 1024
+DEFAULT_CHUNK_BYTES = 512 * 1024
 DEFAULT_CHUNKS_PER_SHARD = 4
 
 ChunksPerShard = Literal[1, 2, 4, 8, 16, 32]
