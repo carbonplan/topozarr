@@ -1,21 +1,19 @@
-from typing import Literal
+import numpy as np
 import xarray as xr
-from xarray import DataTree
 import xproj  # noqa: F401 - registers .proj accessor
+
 from .metadata import (
     create_level_encoding,
     create_multiscale_metadata,
     ZarrLayerVarConfig,
 )
-from .pyramid import Pyramid
+from .pyramid import CoarseningMethod, Pyramid
 from .chunking import (
     DEFAULT_CHUNK_BYTES,
     DEFAULT_CHUNKS_PER_SHARD,
     ChunksPerShard,
     validate_chunks_per_shard,
 )
-
-CoarseningMethod = Literal["mean", "max", "min", "sum"]
 
 
 def get_crs(ds: xr.Dataset) -> str:
@@ -28,27 +26,64 @@ def get_crs(ds: xr.Dataset) -> str:
     return str(crs)
 
 
-def build_coarsened_levels(
+def _coarsen_coord(values: np.ndarray, factor: int) -> np.ndarray:
+    """Mean of cell-center coordinates per window, trimming trailing partials."""
+    n = max(len(values) // factor, 1)
+    window = min(factor, len(values))
+    return values[: n * window].reshape(n, window).mean(axis=1)
+
+
+def _coarsen_template(ds: xr.Dataset, x_dim: str, y_dim: str) -> xr.Dataset:
+    """Halve the spatial dims of ``ds``: real coarsened coords, placeholder data.
+
+    Spatial data variables become zero-cost broadcast arrays of the right
+    shape/dtype (filled in by ``Pyramid.write``); non-spatial variables and
+    coords pass through unchanged.
+    """
+    spatial_dims = {x_dim, y_dim}
+
+    coords = {}
+    for name, coord in ds.coords.items():
+        if coord.ndim == 1 and coord.dims[0] in spatial_dims:
+            coords[name] = xr.DataArray(
+                _coarsen_coord(coord.values, 2), dims=coord.dims, attrs=coord.attrs
+            )
+        else:
+            coords[name] = coord
+
+    data_vars = {}
+    for name, da in ds.data_vars.items():
+        if spatial_dims <= set(da.dims):
+            shape = tuple(
+                s // 2 if d in spatial_dims else s for d, s in zip(da.dims, da.shape)
+            )
+            placeholder = np.broadcast_to(np.zeros(1, dtype=da.dtype), shape)
+            data_vars[name] = xr.DataArray(placeholder, dims=da.dims, attrs=da.attrs)
+        else:
+            data_vars[name] = da
+
+    return xr.Dataset(data_vars, coords=coords, attrs=ds.attrs)
+
+
+def build_level_templates(
     ds: xr.Dataset,
     num_levels: int,
     x_dim: str,
     y_dim: str,
-    method: CoarseningMethod,
 ) -> dict[int, xr.Dataset]:
     levels = [ds]
     for lvl in range(num_levels - 1):
-        curr = levels[0]
+        curr = levels[-1]
         if curr.sizes[x_dim] < 2 or curr.sizes[y_dim] < 2:
             raise ValueError(
                 f"cannot coarsen to {num_levels} levels: after {lvl} step(s) "
                 f"dimensions are {x_dim}={curr.sizes[x_dim]}, {y_dim}={curr.sizes[y_dim]}; "
                 "both must be >= 2 to coarsen further"
             )
-        coarsened = curr.coarsen({x_dim: 2, y_dim: 2}, boundary="trim")
-        levels.insert(0, getattr(coarsened, method)())
+        levels.append(_coarsen_template(curr, x_dim, y_dim))
 
-    # zarr-multiscales: lowest levels = highest resolution (level 0 = highest res)
-    return dict(enumerate(reversed(levels)))
+    # zarr-multiscales: level 0 = highest resolution
+    return dict(enumerate(levels))
 
 
 def create_pyramid(
@@ -61,7 +96,7 @@ def create_pyramid(
     chunks_per_shard: ChunksPerShard | None = DEFAULT_CHUNKS_PER_SHARD,
     layer_hints: dict[str, ZarrLayerVarConfig] | None = None,
 ) -> Pyramid:
-    """Build a multiscale Zarr pyramid from a georeferenced Dataset.
+    """Build a multiscale Zarr pyramid plan from a georeferenced Dataset.
 
     Args:
         ds: Source dataset.  Must have a CRS assigned via ``ds.proj.assign_crs``.
@@ -79,55 +114,47 @@ def create_pyramid(
             into the ``zarr-layer`` root metadata key.
 
     Returns:
-        :class:`Pyramid` with ``.dt`` (DataTree) and ``.encoding`` ready to
-        pass to ``DataTree.to_zarr(..., encoding=pyramid.encoding)``.
+        :class:`Pyramid`; call ``pyramid.write(store)`` to compute and write
+        all levels.
     """
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
     crs_str = get_crs(ds)
-    level_datasets = build_coarsened_levels(ds, levels, x_dim, y_dim, method)
+    level_templates = build_level_templates(ds, levels, x_dim, y_dim)
 
-    dt = DataTree(name="root")
-    full_encoding = {}
-
-    for idx, ds_level in level_datasets.items():
-        name = str(idx)
-        path = f"/{idx}"
-
-        level_encoding = create_level_encoding(
-            ds_level,
+    full_encoding = {
+        f"/{idx}": create_level_encoding(
+            template,
             x_dim,
             y_dim,
             target_chunk_bytes=target_chunk_bytes,
             chunks_per_shard=chunks_per_shard,
         )
+        for idx, template in level_templates.items()
+    }
 
-        dim_chunks = {}
-        for var_name, var_enc in level_encoding.items():
-            if var_name in ds_level.data_vars and "chunks" in var_enc:
-                dask_chunks = var_enc.get("shards", var_enc["chunks"])
-                da = ds_level[var_name]
-
-                for dim, chunk_size in zip(da.dims, dask_chunks):
-                    if dim not in dim_chunks:
-                        dim_chunks[dim] = chunk_size
-                    else:
-                        dim_chunks[dim] = min(dim_chunks[dim], chunk_size)
-
-        if dim_chunks:
-            ds_level = ds_level.chunk(dim_chunks)
-
-        dt[path] = DataTree(ds_level, name=name)
-        full_encoding[path] = level_encoding
-
-    dt.attrs = create_multiscale_metadata(
+    attrs = create_multiscale_metadata(
         ds=ds,
         x_dim=x_dim,
         y_dim=y_dim,
-        level_datasets=level_datasets,
+        level_datasets=level_templates,
         crs=crs_str,
         method=str(method),
         layer_hints=layer_hints,
     )
 
-    return Pyramid(datatree=dt, encoding=full_encoding)
+    fill_values = {
+        name: da.encoding.get("_FillValue", da.attrs.get("_FillValue"))
+        for name, da in ds.data_vars.items()
+    }
+
+    return Pyramid(
+        source=ds,
+        level_templates=level_templates,
+        encoding=full_encoding,
+        attrs=attrs,
+        x_dim=x_dim,
+        y_dim=y_dim,
+        method=method,
+        fill_values=fill_values,
+    )

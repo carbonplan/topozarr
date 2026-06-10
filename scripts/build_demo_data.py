@@ -33,7 +33,6 @@ import click
 import icechunk
 import xarray as xr
 import xproj  # noqa: F401 - registers .proj accessor
-import zarr
 from cloudpathlib import S3Path
 from obstore.store import from_url
 from virtualizarr import open_virtual_dataset
@@ -253,19 +252,14 @@ def write_single_virtual_icechunk(ds: xr.Dataset, cfg: Config) -> None:
 
 
 def build_pyramid(ds: xr.Dataset):
-    ds_crs = ds.proj.assign_crs(spatial_ref_crs={"EPSG": 4326})
+    ds_crs = ds.proj.assign_crs(spatial_ref="EPSG:4326")
     return create_pyramid(ds_crs, levels=3, x_dim="lon", y_dim="lat")
 
 
 def write_multi_zarr_v3_sharded(ds: xr.Dataset, cfg: Config) -> None:
     click.echo("Writing multi_level_zarr_v3_sharded...")
     pyramid = build_pyramid(ds)
-    pyramid.dt.to_zarr(
-        zarr_store(cfg.multi_zarr_v3_sharded, cfg),
-        mode="w",
-        encoding=pyramid.encoding,
-        zarr_format=3,
-    )
+    pyramid.write(zarr_store(cfg.multi_zarr_v3_sharded, cfg))
 
 
 def write_multi_icechunk(ds: xr.Dataset, cfg: Config) -> None:
@@ -276,9 +270,7 @@ def write_multi_icechunk(ds: xr.Dataset, cfg: Config) -> None:
     )
     repo = icechunk.Repository.open_or_create(storage)
     session = repo.writable_session("main")
-    pyramid.dt.to_zarr(
-        session.store, mode="w", encoding=pyramid.encoding, consolidated=False
-    )
+    pyramid.write(session.store)
     session.commit("write multi level icechunk")
 
 
@@ -286,7 +278,7 @@ def write_multi_virtual_hybrid_icechunk(ds: xr.Dataset, cfg: Config) -> None:
     """Hybrid multiscale icechunk store.
 
     Level 0: virtual, backed by the S3 netcdf file.
-    Levels 1-2: materialized coarsened overviews.
+    Levels 1-2: materialized coarsened overviews downsampled from virtual level 0.
     Root: multiscale attrs from topozarr pyramid.
     """
     click.echo("Writing multi_level_virtual_hybrid_icechunk...")
@@ -296,32 +288,24 @@ def write_multi_virtual_hybrid_icechunk(ds: xr.Dataset, cfg: Config) -> None:
     storage = icechunk.s3_storage(
         bucket=cfg.bucket, prefix=cfg.multi_virtual_hybrid_icechunk.key, from_env=True
     )
-    repo = icechunk.Repository.open_or_create(storage, virtual_chunk_config(cfg))
+    repo = icechunk.Repository.open_or_create(
+        storage,
+        config=virtual_chunk_config(cfg),
+        authorize_virtual_chunk_access=icechunk.containers_credentials(
+            {f"s3://{cfg.bucket}/": icechunk.s3_anonymous_credentials()}
+        ),
+    )
 
     # Step 1: write virtual base (highest-res level) into /0 subgroup
     session = repo.writable_session("main")
     vds.vz.to_icechunk(session.store, group="0")
     session.commit("write virtual base level 0")
 
-    # Step 2: set root-level multiscale attrs
+    # Step 2: write root attrs + materialized overviews (levels 1-2).
+    # pyramid.write reads virtual chunks from level 0 to downsample.
     session = repo.writable_session("main")
-    root = zarr.open_group(session.store, zarr_format=3)
-    root.attrs.update(pyramid.dt.attrs)
-    session.commit("write multiscale attrs")
-
-    # Step 3: write materialized overview levels
-    session = repo.writable_session("main")
-    for level in ["1", "2"]:
-        ds_level = pyramid.dt[f"/{level}"].ds
-        ds_level.to_zarr(
-            session.store,
-            group=level,
-            encoding=pyramid.encoding[f"/{level}"],
-            zarr_format=3,
-            consolidated=False,
-            mode="w",
-        )
-    session.commit("write materialized overviews levels 1 and 2")
+    pyramid.write(session.store, mode="a", levels=[1, 2])
+    session.commit("write multiscale attrs and materialized overviews levels 1 and 2")
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,30 @@
+site_name: topozarr
+site_description: Lightweight multiscale Zarr pyramids
+site_url: https://carbonplan.github.io/topozarr/
+repo_url: https://github.com/carbonplan/topozarr
+repo_name: carbonplan/topozarr
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            show_root_heading: true
+            docstring_style: google
+
+nav:
+  - Home: index.md
+  - Usage: usage.md
+  - API Reference: api.md
+  - Contributing: contributing.md

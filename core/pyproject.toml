@@ -1,0 +1,15 @@
+[project]
+name = "topozarr-core"
+version = "0.1.0"
+description = "Block-reduction kernel for topozarr pyramid generation"
+requires-python = ">=3.12"
+dependencies = ["numpy"]
+license = "MIT"
+
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+module-name = "topozarr_core"
+features = ["pyo3/extension-module"]

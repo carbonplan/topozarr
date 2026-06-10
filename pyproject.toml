@@ -5,10 +5,16 @@ description = "Lightweight multiscale zarr"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "dask>=2025.12.0",
+    "h5py[demo]>=3.16.0",
+    "netcdf4>=1.7.4",
+    "numpy",
+    "obstore>=0.9.1",
+    "pooch>=1.9.0",
     "pyproj",
+    "topozarr-core",
     "xarray>=2025.9.0",
     "xproj>=0.2.1",
+    "zarr>=3.0.0",
 ]
 
 [build-system]
@@ -22,13 +28,13 @@ tutorial = [
     "netcdf4",
     "obstore",
     "pooch",
-    "zarr",
 ]
 demo = [
     "boto3",
     "click",
     "cloudpathlib[s3]",
     "dask",
+    "h5py",
     "h5netcdf",
     "icechunk>=1.1.19",
     "obstore",
@@ -38,8 +44,11 @@ demo = [
 
 [dependency-groups]
 test = [
+    "boto3>=1.0",
     "hypothesis>=6.150.0",
+    "icechunk>=1.1.19",
     "ipdb>=0.13.13",
+    "moto[s3,server]>=5.0",
     "pre-commit>=4.5.1",
     "pytest>=9.0.2",
     "pytest-xdist>=3.8.0",
@@ -49,6 +58,11 @@ conformance = [
     "geozarr-toolkit>=0.1.1",
     {include-group = "test"},
 ]
+docs = [
+    "mkdocs-material>=9",
+    "mkdocstrings[python]>=0.25",
+]
+
 
 [tool.pytest.ini_options]
 markers = [
@@ -57,3 +71,7 @@ markers = [
 
 [tool.uv.sources]
 virtualizarr = { git = "https://github.com/zarr-developers/VirtualiZarr" }
+topozarr-core = { workspace = true }
+
+[tool.uv.workspace]
+members = ["core"]

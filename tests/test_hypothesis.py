@@ -61,7 +61,7 @@ def test_pyramid_integration_robustness(ds_info, levels):
             create_pyramid(ds, levels=levels, x_dim=x_dim, y_dim=y_dim)
     else:
         pyramid = create_pyramid(ds, levels=levels, x_dim=x_dim, y_dim=y_dim)
-        assert len(pyramid.dt.children) == levels
+        assert pyramid.levels == levels
 
         for path in pyramid.encoding:
             for var_name, enc in pyramid.encoding[path].items():
@@ -97,7 +97,7 @@ def test_spatial_transform_invariants(ds_info, levels):
     assume(min(nx, ny) >= 2 ** (levels - 1))
 
     pyramid = create_pyramid(ds, levels=levels)
-    attrs = pyramid.dt.attrs
+    attrs = pyramid.attrs
     layout = attrs["multiscales"]["layout"]
 
     # root spatial:shape matches dataset
@@ -115,7 +115,7 @@ def test_spatial_transform_invariants(ds_info, levels):
 
     # per-level: spatial:shape matches actual level dataset shape, pixel size doubles
     for i, entry in enumerate(layout):
-        level_ds = pyramid.dt[str(i)].ds
+        level_ds = pyramid.level_templates[i]
         assert entry["spatial:shape"] == [level_ds.sizes["y"], level_ds.sizes["x"]]
 
         # pixel size doubles per level, but only checkable when >1 pixel exists to

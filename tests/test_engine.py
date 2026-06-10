@@ -1,0 +1,208 @@
+"""Kernel and driver parity tests against xarray.coarsen(boundary="trim")."""
+
+import numpy as np
+import pytest
+import xarray as xr
+import zarr
+from topozarr_core import block_reduce
+from topozarr.engine import copy_array, downsample_level
+from topozarr.coarsen import create_pyramid
+
+METHODS = ["mean", "max", "min", "sum"]
+
+
+def _xr_reference(a: np.ndarray, stride: tuple[int, ...], method: str) -> np.ndarray:
+    dims = [f"d{i}" for i in range(a.ndim)]
+    windows = {d: s for d, s in zip(dims, stride) if s > 1}
+    da = xr.DataArray(a, dims=dims)
+    return getattr(da.coarsen(windows, boundary="trim"), method)().values
+
+
+@pytest.mark.parametrize("method", METHODS)
+@pytest.mark.parametrize("shape", [(8, 8), (101, 100), (7, 5), (3,), (2, 16, 17)])
+def test_block_reduce_matches_xarray_float(method, shape):
+    rng = np.random.default_rng(42)
+    a = rng.random(shape).astype("f8")
+    stride = tuple(2 if i >= len(shape) - 2 else 1 for i in range(len(shape)))
+    got = block_reduce(a, stride, method)
+    want = _xr_reference(a, stride, method)
+    np.testing.assert_allclose(got, want)
+    assert got.dtype == a.dtype
+
+
+@pytest.mark.parametrize("method", METHODS)
+@pytest.mark.parametrize("dtype", ["f4", "f8"])
+def test_block_reduce_skipna_matches_xarray(method, dtype):
+    rng = np.random.default_rng(0)
+    a = rng.random((33, 34)).astype(dtype)
+    a[2:6, 3:9] = np.nan  # interior hole
+    a[10:12, 10:12] = np.nan  # full window hole
+    a[:, -1] = np.nan  # coastline edge
+    got = block_reduce(a, (2, 2), method)
+    want = _xr_reference(a, (2, 2), method).astype(dtype)
+    np.testing.assert_allclose(got, want, rtol=1e-6, equal_nan=True)
+
+
+@pytest.mark.parametrize("method", ["max", "min"])
+@pytest.mark.parametrize("dtype", ["u1", "u2", "i2", "i4", "i8"])
+def test_block_reduce_int_exact(method, dtype):
+    dtype = np.dtype(dtype)
+    rng = np.random.default_rng(7)
+    a = rng.integers(0, 100, (15, 22)).astype(dtype)
+    got = block_reduce(a, (2, 2), method)
+    want = _xr_reference(a, (2, 2), method)
+    np.testing.assert_array_equal(got, want)
+    assert got.dtype == dtype
+
+
+def test_block_reduce_fill_value_int():
+    a = np.array([[1, 3, -9, -9], [5, 7, -9, -9]], dtype="i2")
+    got = block_reduce(a, (2, 2), "mean", fill_value=-9)
+    # valid window averages 1,3,5,7 = 4; all-missing window returns fill
+    np.testing.assert_array_equal(got, np.array([[4, -9]], dtype="i2"))
+
+    got_max = block_reduce(a, (2, 2), "max", fill_value=-9)
+    np.testing.assert_array_equal(got_max, np.array([[7, -9]], dtype="i2"))
+
+
+def test_block_reduce_skipna_false_propagates_nan():
+    a = np.ones((4, 4), dtype="f8")
+    a[0, 0] = np.nan
+    got = block_reduce(a, (2, 2), "mean", skipna=False)
+    assert np.isnan(got[0, 0])
+    assert got[1, 1] == 1.0
+
+
+def test_block_reduce_smaller_than_stride():
+    # axis smaller than stride collapses to size 1, matching max(n // s, 1)
+    a = np.arange(6, dtype="f8").reshape(1, 6)
+    got = block_reduce(a, (2, 2), "mean")
+    assert got.shape == (1, 3)
+    np.testing.assert_allclose(got[0], [0.5, 2.5, 4.5])
+
+
+def test_block_reduce_validation():
+    a = np.zeros((4, 4), dtype="f4")
+    with pytest.raises(ValueError, match="method"):
+        block_reduce(a, (2, 2), "median")
+    with pytest.raises(ValueError, match="stride"):
+        block_reduce(a, (2,), "mean")
+    with pytest.raises(TypeError, match="dtype"):
+        block_reduce(a.astype("c8"), (2, 2), "mean")
+
+
+@pytest.mark.parametrize("shards", [None, (8, 8)])
+def test_downsample_level_zarr_roundtrip(shards):
+    rng = np.random.default_rng(3)
+    data = rng.random((33, 31)).astype("f4")
+    data[5:9, 5:9] = np.nan
+
+    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
+    src = group.create_array("src", shape=data.shape, dtype=data.dtype, chunks=(8, 8))
+    src[:] = data
+    dst = group.create_array(
+        "dst", shape=(16, 15), dtype=data.dtype, chunks=(4, 4), shards=shards
+    )
+
+    downsample_level(src, dst, stride=(2, 2), method="mean")
+    want = _xr_reference(data, (2, 2), "mean").astype("f4")
+    np.testing.assert_allclose(dst[:], want, rtol=1e-6, equal_nan=True)
+
+
+def test_copy_array():
+    rng = np.random.default_rng(4)
+    data = rng.random((20, 17)).astype("f4")
+    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
+    dst = group.create_array("a", shape=data.shape, dtype=data.dtype, chunks=(6, 6))
+    copy_array(data, dst)
+    np.testing.assert_array_equal(dst[:], data)
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_pyramid_parity_with_xarray(create_dataset, method):
+    """Full-pipeline parity: written levels match coarsen(boundary='trim')."""
+    ds = create_dataset(nx=37, ny=41)
+    ds["elevation"].values[3:7, 3:7] = np.nan
+    ds["elevation"].values[:, 0] = np.nan
+
+    pyramid = create_pyramid(ds, levels=3, method=method)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+    dt = xr.open_datatree(store, engine="zarr", consolidated=False)
+
+    ref = ds
+    for lvl in range(3):
+        got = dt[str(lvl)].ds
+        np.testing.assert_allclose(
+            got.elevation.values,
+            ref.elevation.values.astype("f4"),
+            rtol=1e-5,
+            equal_nan=True,
+        )
+        np.testing.assert_allclose(got.x.values, ref.x.values)
+        np.testing.assert_allclose(got.y.values, ref.y.values)
+        ref = getattr(ref.coarsen(x=2, y=2, boundary="trim"), method)()
+
+
+def test_pyramid_extra_dim(create_dataset):
+    ds = create_dataset(nx=16, ny=16).expand_dims(time=3).copy(deep=True)
+    pyramid = create_pyramid(ds, levels=2)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+    dt = xr.open_datatree(store, engine="zarr", consolidated=False)
+
+    assert dt["1"].ds.elevation.shape == (3, 8, 8)
+    want = ds.coarsen(x=2, y=2, boundary="trim").mean()
+    np.testing.assert_allclose(
+        dt["1"].ds.elevation.values, want.elevation.values, rtol=1e-6
+    )
+
+
+def test_pyramid_write_local_store(create_dataset, tmp_path):
+    ds = create_dataset(nx=16, ny=16)
+    pyramid = create_pyramid(ds, levels=2)
+    pyramid.write(tmp_path / "pyramid.zarr")
+
+    dt = xr.open_datatree(tmp_path / "pyramid.zarr", engine="zarr", consolidated=False)
+    assert set(dt.children) == {"0", "1"}
+    np.testing.assert_array_equal(dt["0"].ds.elevation.values, ds.elevation.values)
+
+
+def test_pyramid_write_s3_obstore(create_dataset, s3_zarr_store):
+    pytest.importorskip("moto")
+    ds = create_dataset(nx=16, ny=16)
+    pyramid = create_pyramid(ds, levels=2)
+    pyramid.write(s3_zarr_store)
+
+    dt = xr.open_datatree(s3_zarr_store, engine="zarr", consolidated=False)
+    assert set(dt.children) == {"0", "1"}
+    np.testing.assert_array_equal(dt["0"].ds.elevation.values, ds.elevation.values)
+    np.testing.assert_allclose(
+        dt["1"].ds.elevation.values,
+        ds.coarsen(x=2, y=2, boundary="trim").mean().elevation.values,
+        rtol=1e-6,
+    )
+
+
+def test_pyramid_write_icechunk(create_dataset, tmp_path):
+    icechunk = pytest.importorskip("icechunk")
+    ds = create_dataset(nx=16, ny=16)
+    pyramid = create_pyramid(ds, levels=2)
+
+    repo = icechunk.Repository.create(
+        icechunk.local_filesystem_storage(str(tmp_path / "repo"))
+    )
+    session = repo.writable_session("main")
+    pyramid.write(session.store)
+    session.commit("write pyramid")
+
+    dt = xr.open_datatree(
+        repo.readonly_session("main").store, engine="zarr", consolidated=False
+    )
+    assert set(dt.children) == {"0", "1"}
+    np.testing.assert_array_equal(dt["0"].ds.elevation.values, ds.elevation.values)
+    np.testing.assert_allclose(
+        dt["1"].ds.elevation.values,
+        ds.coarsen(x=2, y=2, boundary="trim").mean().elevation.values,
+        rtol=1e-6,
+    )
