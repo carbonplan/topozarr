@@ -44,4 +44,7 @@ jobs:
         run: cargo fmt --check --manifest-path core/Cargo.toml
 
       - name: Rust clippy
-        run: cargo clippy --manifest-path core/Cargo.toml -- -D warnings
+        run: cargo clippy --manifest-path core/Cargo.toml --all-targets -- -D warnings
+
+      - name: Rust tests
+        run: cargo test --manifest-path core/Cargo.toml

@@ -228,3 +228,96 @@ fn topozarr_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(block_reduce, m)?)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::array;
+
+    #[test]
+    fn methods_basic_2x2() {
+        let a = array![[1.0f64, 2.0], [3.0, 4.0]].into_dyn();
+        for (method, expected) in [
+            (Method::Mean, 2.5),
+            (Method::Max, 4.0),
+            (Method::Min, 1.0),
+            (Method::Sum, 10.0),
+        ] {
+            let out = reduce(a.view(), &[2, 2], method, None, true);
+            assert_eq!(out.shape(), &[1, 1]);
+            assert_eq!(out[[0, 0]], expected);
+        }
+    }
+
+    #[test]
+    fn trims_trailing_partial_windows() {
+        // 3x3 with stride 2: only the complete top-left 2x2 window survives,
+        // matching coarsen(boundary="trim")
+        let a = array![[1.0f64, 2.0, 9.0], [3.0, 4.0, 9.0], [9.0, 9.0, 9.0]].into_dyn();
+        let out = reduce(a.view(), &[2, 2], Method::Mean, None, true);
+        assert_eq!(out.shape(), &[1, 1]);
+        assert_eq!(out[[0, 0]], 2.5);
+    }
+
+    #[test]
+    fn axis_smaller_than_stride_yields_one_window() {
+        let a = array![[1.0f64, 2.0, 3.0, 4.0]].into_dyn();
+        let out = reduce(a.view(), &[2, 2], Method::Sum, None, true);
+        assert_eq!(out.shape(), &[1, 2]);
+        assert_eq!(out[[0, 0]], 3.0);
+        assert_eq!(out[[0, 1]], 7.0);
+    }
+
+    #[test]
+    fn nan_handling_per_skipna() {
+        let a = array![[1.0f64, f64::NAN], [3.0, 5.0]].into_dyn();
+        let out = reduce(a.view(), &[2, 2], Method::Mean, None, true);
+        assert_eq!(out[[0, 0]], 3.0);
+        let out = reduce(a.view(), &[2, 2], Method::Mean, None, false);
+        assert!(out[[0, 0]].is_nan());
+        let out = reduce(a.view(), &[2, 2], Method::Max, None, false);
+        assert!(out[[0, 0]].is_nan());
+    }
+
+    #[test]
+    fn integer_fill_value_skipped() {
+        let a = array![[1u8, 255], [3, 5]].into_dyn();
+        let out = reduce(a.view(), &[2, 2], Method::Mean, Some(255), true);
+        assert_eq!(out[[0, 0]], 3); // (1 + 3 + 5) / 3
+        let out = reduce(a.view(), &[2, 2], Method::Min, Some(255), true);
+        assert_eq!(out[[0, 0]], 1);
+    }
+
+    #[test]
+    fn all_missing_window_semantics() {
+        // sum -> 0 (nansum); mean/max -> fill when given, else NaN
+        let a = array![[f64::NAN, f64::NAN], [f64::NAN, f64::NAN]].into_dyn();
+        assert_eq!(
+            reduce(a.view(), &[2, 2], Method::Sum, None, true)[[0, 0]],
+            0.0
+        );
+        assert!(reduce(a.view(), &[2, 2], Method::Mean, None, true)[[0, 0]].is_nan());
+        assert!(reduce(a.view(), &[2, 2], Method::Max, None, true)[[0, 0]].is_nan());
+        let out = reduce(a.view(), &[2, 2], Method::Mean, Some(-9999.0), true);
+        assert_eq!(out[[0, 0]], -9999.0);
+
+        let b = array![[7i32, 7], [7, 7]].into_dyn();
+        assert_eq!(
+            reduce(b.view(), &[2, 2], Method::Min, Some(7), true)[[0, 0]],
+            7
+        );
+        assert_eq!(
+            reduce(b.view(), &[2, 2], Method::Sum, Some(7), true)[[0, 0]],
+            0
+        );
+    }
+
+    #[test]
+    fn three_d_unit_stride_on_leading_axis() {
+        let a = array![[[1.0f32, 2.0], [3.0, 4.0]], [[10.0, 20.0], [30.0, 40.0]]].into_dyn();
+        let out = reduce(a.view(), &[1, 2, 2], Method::Mean, None, true);
+        assert_eq!(out.shape(), &[2, 1, 1]);
+        assert_eq!(out[[0, 0, 0]], 2.5);
+        assert_eq!(out[[1, 0, 0]], 25.0);
+    }
+}

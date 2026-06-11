@@ -9,8 +9,13 @@ description = "Block-reduction kernel for topozarr pyramid generation"
 name = "topozarr_core"
 crate-type = ["cdylib"]
 
+# extension-module is enabled by maturin (see pyproject.toml); keeping it out
+# of the default features lets `cargo test` link against libpython
+[features]
+extension-module = ["pyo3/extension-module"]
+
 [dependencies]
-pyo3 = { version = "0.28", features = ["extension-module", "abi3-py312"] }
+pyo3 = { version = "0.28", features = ["abi3-py312"] }
 numpy = "0.28"
 ndarray = { version = "0.17", features = ["rayon"] }
 
