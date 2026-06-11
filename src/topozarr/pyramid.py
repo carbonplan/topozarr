@@ -7,9 +7,17 @@ import numpy as np
 import xarray as xr
 import zarr
 
-from .engine import copy_array, downsample_level
+from .engine import DEFAULT_MAX_REGION_BYTES, copy_array, downsample_level
 
 CoarseningMethod = Literal["mean", "max", "min", "sum"]
+
+
+def source_chunks(da: xr.DataArray) -> tuple[int, ...] | None:
+    """Per-axis chunk shape of the source backing ``da``, if chunked."""
+    if da.chunks is not None:  # dask
+        return tuple(c[0] for c in da.chunks)
+    enc = da.encoding.get("chunks")  # zarr/icechunk backend
+    return tuple(enc) if enc is not None else None
 
 
 def _to_python(obj: Any) -> Any:
@@ -67,12 +75,16 @@ class Pyramid:
         mode: str = "w",
         max_workers: int | None = None,
         levels: list[int] | None = None,
+        max_region_bytes: int = DEFAULT_MAX_REGION_BYTES,
     ) -> None:
         """Compute and write pyramid levels to a Zarr store.
 
-        Level 0 is copied from the source dataset; each subsequent level is
-        block-reduced from the previously written level, streaming
-        shard-sized regions through the Rust kernel on a thread pool.
+        Level 0 is streamed region by region from the source dataset; each
+        subsequent level is block-reduced from the previously written level,
+        streaming shard-sized regions through the Rust kernel on a thread
+        pool. For bounded memory on large stores, open the source lazily
+        (e.g. ``xr.open_zarr(store, chunks=None)``); peak memory is roughly
+        ``max_workers * max_region_bytes``.
 
         Args:
             store: Anything zarr-python accepts — a local path,
@@ -84,6 +96,9 @@ class Pyramid:
                 uses the ``ThreadPoolExecutor`` default.
             levels: Subset of levels to write (e.g. ``[1, 2]``).
                 Defaults to all levels.
+            max_region_bytes: Memory budget per level-0 copy region. Regions
+                are widened to cover whole source chunks when that fits the
+                budget, so each source chunk is read once.
 
         Examples:
             Write all levels to a local store:
@@ -110,7 +125,9 @@ class Pyramid:
             )
             level_group = root[str(lvl)]
             for name in spatial_vars:
-                self._write_var(root, level_group, lvl, name, max_workers)
+                self._write_var(
+                    root, level_group, lvl, name, max_workers, max_region_bytes
+                )
 
     def _write_var(
         self,
@@ -119,6 +136,7 @@ class Pyramid:
         lvl: int,
         name: str,
         max_workers: int | None,
+        max_region_bytes: int = DEFAULT_MAX_REGION_BYTES,
     ) -> None:
         template_da = self.level_templates[lvl][name]
         source_da = self.source[name]
@@ -143,7 +161,13 @@ class Pyramid:
         )
 
         if lvl == 0:
-            copy_array(np.asarray(source_da.values), dst, max_workers=max_workers)
+            copy_array(
+                source_da.variable,
+                dst,
+                source_chunks=source_chunks(source_da),
+                max_region_bytes=max_region_bytes,
+                max_workers=max_workers,
+            )
         else:
             stride = tuple(
                 2 if d in (self.x_dim, self.y_dim) else 1 for d in template_da.dims

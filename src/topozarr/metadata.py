@@ -9,6 +9,7 @@ from .chunking import (
     DEFAULT_CHUNKS_PER_SHARD,
     ChunksPerShard,
     get_ideal_dim,
+    snap_chunk_to_source,
 )
 
 
@@ -40,6 +41,7 @@ def create_level_encoding(
     y_dim: str,
     target_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
     chunks_per_shard: ChunksPerShard | None = DEFAULT_CHUNKS_PER_SHARD,
+    source_chunks: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     spatial_vars = {
         var_name: da
@@ -49,7 +51,7 @@ def create_level_encoding(
 
     return {
         var_name: _create_var_encoding(
-            da, x_dim, y_dim, target_chunk_bytes, chunks_per_shard
+            da, x_dim, y_dim, target_chunk_bytes, chunks_per_shard, source_chunks
         )
         for var_name, da in spatial_vars.items()
     }
@@ -61,6 +63,7 @@ def _create_var_encoding(
     y_dim: str,
     target_chunk_bytes: int,
     chunks_per_shard: ChunksPerShard | None,
+    source_chunks: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     itemsize = da.dtype.itemsize
     ideal_chunk = get_ideal_dim(itemsize, target_chunk_bytes)
@@ -71,7 +74,13 @@ def _create_var_encoding(
     shards = list(da.shape) if chunks_per_shard is not None else None
 
     for idx, dim_name in [(y_idx, y_dim), (x_idx, x_dim)]:
-        c = calculate_chunk_size(da.shape[idx], ideal_chunk)
+        c = None
+        if source_chunks is not None and dim_name in source_chunks:
+            c = snap_chunk_to_source(
+                da.shape[idx], ideal_chunk, source_chunks[dim_name], chunks_per_shard
+            )
+        if c is None:
+            c = calculate_chunk_size(da.shape[idx], ideal_chunk)
         chunks[idx] = c
 
         if shards is not None:

@@ -7,7 +7,7 @@ from .metadata import (
     create_multiscale_metadata,
     ZarrLayerVarConfig,
 )
-from .pyramid import CoarseningMethod, Pyramid
+from .pyramid import CoarseningMethod, Pyramid, source_chunks
 from .chunking import (
     DEFAULT_CHUNK_BYTES,
     DEFAULT_CHUNKS_PER_SHARD,
@@ -63,6 +63,24 @@ def _coarsen_template(ds: xr.Dataset, x_dim: str, y_dim: str) -> xr.Dataset:
             data_vars[name] = da
 
     return xr.Dataset(data_vars, coords=coords, attrs=ds.attrs)
+
+
+def _spatial_source_chunks(
+    ds: xr.Dataset, x_dim: str, y_dim: str
+) -> dict[str, int] | None:
+    """Source chunk size per spatial dim, if all spatial vars agree."""
+    sizes: dict[str, set[int]] = {x_dim: set(), y_dim: set()}
+    for da in ds.data_vars.values():
+        if not {x_dim, y_dim} <= set(da.dims):
+            continue
+        chunks = source_chunks(da)
+        if chunks is None:
+            return None
+        for dim in (x_dim, y_dim):
+            sizes[dim].add(chunks[da.get_axis_num(dim)])
+    if any(len(s) != 1 for s in sizes.values()):
+        return None
+    return {dim: s.pop() for dim, s in sizes.items()}
 
 
 def build_level_templates(
@@ -139,6 +157,7 @@ def create_pyramid(
     crs_str = get_crs(ds)
     level_templates = build_level_templates(ds, levels, x_dim, y_dim)
 
+    level0_source_chunks = _spatial_source_chunks(ds, x_dim, y_dim)
     full_encoding = {
         f"/{idx}": create_level_encoding(
             template,
@@ -146,6 +165,7 @@ def create_pyramid(
             y_dim,
             target_chunk_bytes=target_chunk_bytes,
             chunks_per_shard=chunks_per_shard,
+            source_chunks=level0_source_chunks if idx == 0 else None,
         )
         for idx, template in level_templates.items()
     }

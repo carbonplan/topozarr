@@ -6,6 +6,7 @@ import math
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from itertools import product
+from typing import Any
 
 import numpy as np
 import zarr
@@ -13,10 +14,19 @@ from topozarr_core import block_reduce
 
 Region = tuple[slice, ...]
 
+DEFAULT_MAX_REGION_BYTES = 256 * 1024 * 1024
 
-def shard_aligned_regions(arr: zarr.Array) -> Iterator[Region]:
-    """Iterate output regions aligned to the array's shard (or chunk) grid."""
-    region_shape = arr.shards or arr.chunks
+
+def shard_aligned_regions(
+    arr: zarr.Array, region_shape: tuple[int, ...] | None = None
+) -> Iterator[Region]:
+    """Iterate output regions aligned to the array's shard (or chunk) grid.
+
+    ``region_shape`` overrides the grid; it must be a per-axis multiple of
+    the shard size so writes never straddle partial shards.
+    """
+    if region_shape is None:
+        region_shape = arr.shards or arr.chunks
     counts = [math.ceil(n / r) for n, r in zip(arr.shape, region_shape)]
     for idx in product(*(range(c) for c in counts)):
         yield tuple(
@@ -29,20 +39,60 @@ def _write_regions(
     dst: zarr.Array,
     get_block: Callable[[Region], np.ndarray],
     max_workers: int | None,
+    region_shape: tuple[int, ...] | None = None,
 ) -> None:
     def one(region: Region) -> None:
         dst[region] = get_block(region)
 
     with ThreadPoolExecutor(max_workers) as ex:
-        for _ in ex.map(one, shard_aligned_regions(dst)):
+        for _ in ex.map(one, shard_aligned_regions(dst, region_shape)):
             pass  # drain to surface exceptions
 
 
+def _copy_region_shape(
+    dst: zarr.Array,
+    source_chunks: tuple[int, ...] | None,
+    max_region_bytes: int,
+) -> tuple[int, ...]:
+    """Region shape for a source-to-dst copy: the dst shard grid, widened per
+    axis to the lcm with the source chunk grid so each source chunk is read
+    once. Falls back to the plain shard grid if the lcm region exceeds the
+    memory budget.
+    """
+    shard = dst.shards or dst.chunks
+    if source_chunks is None:
+        return shard
+    region = tuple(
+        min(math.lcm(s, c), n) for s, c, n in zip(shard, source_chunks, dst.shape)
+    )
+    if math.prod(region) * dst.dtype.itemsize > max_region_bytes:
+        return shard
+    return region
+
+
 def copy_array(
-    values: np.ndarray, dst: zarr.Array, *, max_workers: int | None = None
+    values: Any,
+    dst: zarr.Array,
+    *,
+    source_chunks: tuple[int, ...] | None = None,
+    max_region_bytes: int = DEFAULT_MAX_REGION_BYTES,
+    max_workers: int | None = None,
 ) -> None:
-    """Write an in-memory array into ``dst`` region by region."""
-    _write_regions(dst, lambda region: values[region], max_workers)
+    """Write a region-indexable array into ``dst`` region by region.
+
+    ``values`` may be a numpy array or any lazy array supporting
+    tuple-of-slices indexing (e.g. ``xr.Variable`` backed by zarr/icechunk);
+    each region is materialized individually, keeping peak memory at
+    ``max_workers x region_size``. Pass ``source_chunks`` to widen regions to
+    the source chunk grid so each source chunk is decoded once.
+    """
+    shape = _copy_region_shape(dst, source_chunks, max_region_bytes)
+    _write_regions(
+        dst,
+        lambda region: np.ascontiguousarray(values[region]),
+        max_workers,
+        region_shape=shape,
+    )
 
 
 def downsample_level(

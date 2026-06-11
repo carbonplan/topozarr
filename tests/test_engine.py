@@ -5,7 +5,7 @@ import pytest
 import xarray as xr
 import zarr
 from topozarr_core import block_reduce
-from topozarr.engine import copy_array, downsample_level
+from topozarr.engine import _copy_region_shape, copy_array, downsample_level
 from topozarr.coarsen import create_pyramid
 
 METHODS = ["mean", "max", "min", "sum"]
@@ -115,6 +115,77 @@ def test_copy_array():
     group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
     dst = group.create_array("a", shape=data.shape, dtype=data.dtype, chunks=(6, 6))
     copy_array(data, dst)
+    np.testing.assert_array_equal(dst[:], data)
+
+
+class _RegionRecorder:
+    """Indexable shim that records requested regions and forbids full reads."""
+
+    def __init__(self, data: np.ndarray):
+        self.data = data
+        self.shape = data.shape
+        self.regions: list[tuple[slice, ...]] = []
+
+    def __getitem__(self, region):
+        self.regions.append(region)
+        return self.data[region]
+
+    def __array__(self, *args, **kwargs):
+        raise AssertionError("full-array materialization")
+
+
+def _make_dst(group, shape, chunks, shards=None, dtype="f4"):
+    return group.create_array(
+        "dst", shape=shape, dtype=dtype, chunks=chunks, shards=shards
+    )
+
+
+def test_copy_region_shape():
+    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
+    dst = _make_dst(group, (64, 64), chunks=(4, 4), shards=(8, 8))
+
+    # no source chunk info → plain shard grid
+    assert _copy_region_shape(dst, None, 2**30) == (8, 8)
+    # source chunks a multiple of the shard → region widens to source chunks
+    assert _copy_region_shape(dst, (16, 16), 2**30) == (16, 16)
+    # misaligned grids → lcm, clipped at array bounds
+    assert _copy_region_shape(dst, (12, 12), 2**30) == (24, 24)
+    assert _copy_region_shape(dst, (48, 96), 2**30) == (48, 64)
+    # lcm region over budget → fall back to shard grid
+    assert _copy_region_shape(dst, (16, 16), 4) == (8, 8)
+
+
+def test_copy_array_streams_regions():
+    rng = np.random.default_rng(5)
+    data = rng.random((32, 32)).astype("f4")
+    src = _RegionRecorder(data)
+
+    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
+    dst = _make_dst(group, data.shape, chunks=(4, 4), shards=(8, 8))
+    copy_array(src, dst, source_chunks=(16, 16))
+
+    np.testing.assert_array_equal(dst[:], data)
+    # regions widened to the 16x16 source chunk grid; each chunk read once
+    assert len(src.regions) == 4
+    starts = {(r[0].start, r[1].start) for r in src.regions}
+    assert starts == {(0, 0), (0, 16), (16, 0), (16, 16)}
+
+
+def test_copy_array_lazy_zarr_source():
+    rng = np.random.default_rng(6)
+    data = rng.random((30, 20)).astype("f4")
+
+    src_store = zarr.storage.MemoryStore()
+    xr.Dataset({"v": (("y", "x"), data)}).to_zarr(
+        src_store, consolidated=False, encoding={"v": {"chunks": (10, 10)}}
+    )
+    lazy = xr.open_dataset(src_store, engine="zarr", chunks=None, consolidated=False)
+    var = lazy["v"].variable
+    assert lazy["v"].encoding["chunks"] == (10, 10)
+
+    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
+    dst = _make_dst(group, data.shape, chunks=(5, 5))
+    copy_array(var, dst, source_chunks=(10, 10))
     np.testing.assert_array_equal(dst[:], data)
 
 
