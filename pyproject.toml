@@ -1,6 +1,6 @@
 [project]
 name = "topozarr"
-version = "0.0.91"
+version = "0.0.92"
 description = "Lightweight multiscale zarr"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -21,19 +21,15 @@ build-backend = "uv_build"
 
 [project.optional-dependencies]
 tutorial = [
-    "icechunk",
-    "netcdf4",
-    "obstore",
-    "pooch",
-]
-demo = [
     "boto3",
     "click",
     "cloudpathlib[s3]",
     "h5py",
     "h5netcdf",
     "icechunk>=1.1.19",
+    "netcdf4",
     "obstore",
+    "pooch",
     "virtualizarr",
     "zarr",
 ]
