@@ -2484,7 +2484,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=5.9" },
     { name = "pyproj" },
     { name = "topozarr-core", editable = "core" },
-    { name = "virtualizarr", marker = "extra == 'demo'", git = "https://github.com/zarr-developers/VirtualiZarr" },
+    { name = "virtualizarr", marker = "extra == 'demo'", git = "https://github.com/zarr-developers/VirtualiZarr?rev=3c10c433b29dddad98169c298d36ead192f0aad1" },
     { name = "xarray", specifier = ">=2025.9.0" },
     { name = "xproj", specifier = ">=0.2.1" },
     { name = "zarr", specifier = ">=3.0.0" },
@@ -2684,7 +2684,7 @@ wheels = [
 [[package]]
 name = "virtualizarr"
 version = "2.5.1.dev5+g3c10c433b"
-source = { git = "https://github.com/zarr-developers/VirtualiZarr#3c10c433b29dddad98169c298d36ead192f0aad1" }
+source = { git = "https://github.com/zarr-developers/VirtualiZarr?rev=3c10c433b29dddad98169c298d36ead192f0aad1#3c10c433b29dddad98169c298d36ead192f0aad1" }
 dependencies = [
     { name = "numcodecs" },
     { name = "numpy" },

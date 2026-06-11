@@ -69,7 +69,7 @@ markers = [
 ]
 
 [tool.uv.sources]
-virtualizarr = { git = "https://github.com/zarr-developers/VirtualiZarr" }
+virtualizarr = { git = "https://github.com/zarr-developers/VirtualiZarr", rev = "3c10c433b29dddad98169c298d36ead192f0aad1" }
 topozarr-core = { workspace = true }
 
 [tool.uv.workspace]

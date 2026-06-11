@@ -2,10 +2,13 @@
 
 name: publish to pypi
 
+# workflow_dispatch builds wheel/sdist artifacts for branch testing
+# without publishing (publish jobs only run on tag pushes)
 on:
   push:
     tags:
       - v*
+  workflow_dispatch:
 
 jobs:
   build-core-wheels:
@@ -58,6 +61,7 @@ jobs:
           path: core/dist
 
   publish-core:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     needs: [build-core-wheels, build-core-sdist]
     environment:
@@ -100,6 +104,7 @@ jobs:
         run: uv publish --check-url https://pypi.org/simple/ dist/*
 
   publish:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     needs: [publish-core]
     environment:
