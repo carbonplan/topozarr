@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 from typing import Literal
 
@@ -45,20 +47,24 @@ def snap_chunk_to_source(
     Returns None when no candidate chunk lies within [ideal/2, ideal*2] and
     >= 128 (caller falls back to the plain heuristic).
     """
+    # small dims take a single chunk anyway; nothing to snap
     if src_chunk <= 0 or dim_size <= 128 or dim_size <= ideal_chunk:
         return None
     cps = chunks_per_shard or 1
     ideal_shard = ideal_chunk * cps
 
+    # candidate *shard* sizes that nest with the source chunk grid
     candidates: set[int] = set()
-    # shards that divide the source chunk
+    # every divisor of src_chunk (found in pairs up to sqrt)
     for d in range(1, int(math.isqrt(src_chunk)) + 1):
         if src_chunk % d == 0:
             candidates.update((d, src_chunk // d))
-    # shards that are multiples of the source chunk
+    # multiples of src_chunk, up to the first one past 2x the ideal shard
+    # (anything larger cannot yield a chunk within the [ideal/2, ideal*2] band)
     max_mult = max(1, (2 * ideal_shard) // src_chunk + 1)
     candidates.update(src_chunk * m for m in range(1, max_mult + 1))
 
+    # keep shards that split evenly into cps chunks of acceptable size
     valid = [
         s // cps
         for s in candidates
@@ -68,4 +74,5 @@ def snap_chunk_to_source(
     ]
     if not valid:
         return None
+    # closest to ideal; ties prefer the smaller chunk
     return min(valid, key=lambda c: (abs(c - ideal_chunk), c))
