@@ -58,6 +58,32 @@ def test_custom_dimensions(create_dataset):
     assert pyramid.level_templates[0].elevation.shape == (16, 16)
 
 
+def test_multi_variable_write_roundtrip(create_dataset):
+    ds = create_dataset(nx=16, ny=16)
+    ds["slope"] = ds.elevation * 2
+    pyramid = create_pyramid(ds, levels=2)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+
+    dt = xr.open_datatree(store, engine="zarr", consolidated=False)
+    expected = ds.coarsen(x=2, y=2, boundary="trim").mean()
+    for var in ("elevation", "slope"):
+        np.testing.assert_array_equal(dt["0"].ds[var].values, ds[var].values)
+        np.testing.assert_allclose(
+            dt["1"].ds[var].values, expected[var].values, rtol=1e-6
+        )
+
+
+def test_write_progress(create_dataset):
+    pytest.importorskip("tqdm")
+    pyramid = create_pyramid(create_dataset(), levels=2)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store, progress=True)
+
+    dt = xr.open_datatree(store, engine="zarr", consolidated=False)
+    assert set(dt.children) == {"0", "1"}
+
+
 def test_write_invalid_levels(create_dataset):
     pyramid = create_pyramid(create_dataset(), levels=2)
 

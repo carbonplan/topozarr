@@ -3,18 +3,36 @@
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from itertools import product
 from typing import Any
 
 import numpy as np
+import psutil
 import zarr
 from topozarr_core import block_reduce
 
 Region = tuple[slice, ...]
 
 DEFAULT_MAX_REGION_BYTES = 256 * 1024 * 1024
+
+# rough peak-memory multiplier per in-flight region: source block, contiguous
+# copy, reduced output, and zarr codec buffers
+_REGION_MEM_FACTOR = 5
+
+
+def default_max_workers(region_bytes: int) -> int:
+    """Thread count bounded by CPU count and available memory.
+
+    Peak memory is roughly ``workers * 5 * region_bytes``, so workers are
+    capped at half the available RAM divided by that per-region footprint.
+    """
+    cpu = os.cpu_count() or 4
+    mem_budget = psutil.virtual_memory().available // 2
+    by_mem = mem_budget // max(1, _REGION_MEM_FACTOR * region_bytes)
+    return max(1, min(cpu * 2, int(by_mem)))
 
 
 def shard_aligned_regions(
@@ -40,17 +58,34 @@ def _write_regions(
     get_block: Callable[[Region], np.ndarray],
     max_workers: int | None,
     region_shape: tuple[int, ...] | None = None,
-) -> None:
+    executor: ThreadPoolExecutor | None = None,
+    on_region: Callable[[], None] | None = None,
+) -> list[Future[None]]:
+    """Write every region of ``dst`` via ``get_block`` on a thread pool.
+
+    With an external ``executor``, tasks are submitted and the pending futures
+    returned for the caller to drain; otherwise a pool of ``max_workers`` is
+    created, drained, and an empty list returned.
+    """
+
     def one(region: Region) -> None:
         dst[region] = get_block(region)
+        if on_region is not None:
+            on_region()
 
+    regions = shard_aligned_regions(dst, region_shape)
+    if executor is not None:
+        return [executor.submit(one, region) for region in regions]
     with ThreadPoolExecutor(max_workers) as ex:
-        for _ in ex.map(one, shard_aligned_regions(dst, region_shape)):
+        for _ in ex.map(one, regions):
             pass  # drain to surface exceptions
+    return []
 
 
-def _copy_region_shape(
-    dst: zarr.Array,
+def copy_region_shape(
+    shard: tuple[int, ...],
+    shape: tuple[int, ...],
+    itemsize: int,
     source_chunks: tuple[int, ...] | None,
     max_region_bytes: int,
 ) -> tuple[int, ...]:
@@ -59,13 +94,12 @@ def _copy_region_shape(
     once. Falls back to the plain shard grid if the lcm region exceeds the
     memory budget.
     """
-    shard = dst.shards or dst.chunks
     if source_chunks is None:
         return shard
     region = tuple(
-        min(math.lcm(s, c), n) for s, c, n in zip(shard, source_chunks, dst.shape)
+        min(math.lcm(s, c), n) for s, c, n in zip(shard, source_chunks, shape)
     )
-    if math.prod(region) * dst.dtype.itemsize > max_region_bytes:
+    if math.prod(region) * itemsize > max_region_bytes:
         return shard
     return region
 
@@ -77,7 +111,9 @@ def copy_array(
     source_chunks: tuple[int, ...] | None = None,
     max_region_bytes: int = DEFAULT_MAX_REGION_BYTES,
     max_workers: int | None = None,
-) -> None:
+    executor: ThreadPoolExecutor | None = None,
+    on_region: Callable[[], None] | None = None,
+) -> list[Future[None]]:
     """Write a region-indexable array into ``dst`` region by region.
 
     ``values`` may be a numpy array or any lazy array supporting
@@ -86,12 +122,20 @@ def copy_array(
     ``max_workers x region_size``. Pass ``source_chunks`` to widen regions to
     the source chunk grid so each source chunk is decoded once.
     """
-    shape = _copy_region_shape(dst, source_chunks, max_region_bytes)
-    _write_regions(
+    shape = copy_region_shape(
+        dst.shards or dst.chunks,
+        dst.shape,
+        dst.dtype.itemsize,
+        source_chunks,
+        max_region_bytes,
+    )
+    return _write_regions(
         dst,
         lambda region: np.ascontiguousarray(values[region]),
         max_workers,
         region_shape=shape,
+        executor=executor,
+        on_region=on_region,
     )
 
 
@@ -104,7 +148,9 @@ def downsample_level(
     fill_value: float | int | None = None,
     skipna: bool = True,
     max_workers: int | None = None,
-) -> None:
+    executor: ThreadPoolExecutor | None = None,
+    on_region: Callable[[], None] | None = None,
+) -> list[Future[None]]:
     """Block-reduce ``src`` into ``dst`` by integer ``stride`` per axis.
 
     Streams shard-sized output regions through ``topozarr_core.block_reduce``
@@ -125,4 +171,6 @@ def downsample_level(
         block = np.ascontiguousarray(src[in_sel])
         return block_reduce(block, stride, method, fill_value, skipna)
 
-    _write_regions(dst, get_block, max_workers)
+    return _write_regions(
+        dst, get_block, max_workers, executor=executor, on_region=on_region
+    )

@@ -5,7 +5,7 @@ import pytest
 import xarray as xr
 import zarr
 from topozarr_core import block_reduce
-from topozarr.engine import _copy_region_shape, copy_array, downsample_level
+from topozarr.engine import copy_array, copy_region_shape, downsample_level
 from topozarr.coarsen import create_pyramid
 
 METHODS = ["mean", "max", "min", "sum"]
@@ -140,19 +140,35 @@ def _make_dst(group, shape, chunks, shards=None, dtype="f4"):
     )
 
 
+def test_default_max_workers(monkeypatch):
+    from topozarr import engine
+
+    class FakeMem:
+        available = 2 * 5 * 1024**2 * 3  # budget of 3 x 5MB-footprint regions
+
+    monkeypatch.setattr(engine.psutil, "virtual_memory", lambda: FakeMem)
+    monkeypatch.setattr(engine.os, "cpu_count", lambda: 4)
+
+    # memory-bound: 3 regions fit the budget
+    assert engine.default_max_workers(1024**2) == 3
+    # cpu-bound: tiny regions cap at cpu_count * 2
+    assert engine.default_max_workers(1) == 8
+    # never below 1, even when a region exceeds the budget
+    assert engine.default_max_workers(2**40) == 1
+
+
 def test_copy_region_shape():
-    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
-    dst = _make_dst(group, (64, 64), chunks=(4, 4), shards=(8, 8))
+    shard, shape, itemsize = (8, 8), (64, 64), 4
 
     # no source chunk info → plain shard grid
-    assert _copy_region_shape(dst, None, 2**30) == (8, 8)
+    assert copy_region_shape(shard, shape, itemsize, None, 2**30) == (8, 8)
     # source chunks a multiple of the shard → region widens to source chunks
-    assert _copy_region_shape(dst, (16, 16), 2**30) == (16, 16)
+    assert copy_region_shape(shard, shape, itemsize, (16, 16), 2**30) == (16, 16)
     # misaligned grids → lcm, clipped at array bounds
-    assert _copy_region_shape(dst, (12, 12), 2**30) == (24, 24)
-    assert _copy_region_shape(dst, (48, 96), 2**30) == (48, 64)
+    assert copy_region_shape(shard, shape, itemsize, (12, 12), 2**30) == (24, 24)
+    assert copy_region_shape(shard, shape, itemsize, (48, 96), 2**30) == (48, 64)
     # lcm region over budget → fall back to shard grid
-    assert _copy_region_shape(dst, (16, 16), 4) == (8, 8)
+    assert copy_region_shape(shard, shape, itemsize, (16, 16), 4) == (8, 8)
 
 
 def test_copy_array_streams_regions():
