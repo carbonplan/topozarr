@@ -113,6 +113,13 @@ class Pyramid:
             pyramid.write("pyramid.zarr", mode="a", levels=[1, 2])
             ```
         """
+        if levels is not None:
+            invalid = sorted(set(levels) - set(self.level_templates))
+            if invalid:
+                raise ValueError(
+                    f"invalid levels {invalid}; pyramid has levels 0-{self.levels - 1}"
+                )
+
         root = zarr.open_group(store, mode=mode, zarr_format=3)
         root.attrs.update(self.attrs)
         spatial_vars = self._spatial_vars()

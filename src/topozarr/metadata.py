@@ -1,5 +1,9 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, asdict
 from typing import Any
+
+import numpy as np
 import xarray as xr
 from pyproj import CRS
 from .chunking import (
@@ -99,19 +103,47 @@ def _create_var_encoding(
     return var_encoding
 
 
-def _get_affine_transform(ds: xr.Dataset, x_dim: str, y_dim: str) -> list[float]:
+def _coord_resolution(values: np.ndarray, dim: str, fallback: float | None) -> float:
+    """Spacing of a 1-D coordinate array; raises on non-uniform spacing.
+
+    A single-element coordinate (a fully coarsened dimension) carries no
+    spacing information, so ``fallback`` (derived from the level-0 resolution)
+    is required in that case.
+    """
+    if len(values) > 1:
+        diffs = np.diff(values.astype("float64"))
+        if not np.allclose(diffs, diffs[0], rtol=1e-5):
+            raise ValueError(
+                f"coordinate {dim!r} is not uniformly spaced; "
+                "topozarr requires a regular grid"
+            )
+        return float(diffs[0])
+    if fallback is None:
+        raise ValueError(
+            f"cannot infer resolution of coordinate {dim!r} from a single value"
+        )
+    return fallback
+
+
+def _get_affine_transform(
+    ds: xr.Dataset,
+    x_dim: str,
+    y_dim: str,
+    fallback_res: tuple[float, float] | None = None,
+) -> list[float]:
     """Extract 6-element affine transform [a, b, c, d, e, f] from coordinate arrays.
 
     Follows Rasterio/spatial: convention: x = a*col + b*row + c, y = d*col + e*row + f,
     where (0, 0) is the top-left corner of the top-left pixel.
 
-    Assumes uniformly spaced coordinates; resolution is taken from the first
-    two values of each coordinate array.
+    Coordinates must be uniformly spaced. ``fallback_res`` supplies the
+    (x, y) resolution for length-1 dimensions, which have no measurable
+    spacing of their own.
     """
     x = ds[x_dim].values
     y = ds[y_dim].values
-    x_res = float(x[1] - x[0]) if len(x) > 1 else 1.0
-    y_res = float(y[1] - y[0]) if len(y) > 1 else 1.0
+    x_res = _coord_resolution(x, x_dim, fallback_res[0] if fallback_res else None)
+    y_res = _coord_resolution(y, y_dim, fallback_res[1] if fallback_res else None)
     c = float(x[0]) - 0.5 * x_res  # x-coordinate of top-left pixel corner
     f = float(y[0]) - 0.5 * y_res  # y-coordinate of top-left pixel corner
     return [x_res, 0.0, c, 0.0, y_res, f]
@@ -151,7 +183,11 @@ def create_multiscale_metadata(
 
     def get_level_spatial_attrs(level: int) -> dict[str, Any]:
         level_ds = level_datasets[level]
-        level_transform = _get_affine_transform(level_ds, x_dim, y_dim)
+        # length-1 dims at deep levels fall back to level-0 resolution * 2^level
+        fallback = (root_transform[0] * 2**level, root_transform[4] * 2**level)
+        level_transform = _get_affine_transform(
+            level_ds, x_dim, y_dim, fallback_res=fallback
+        )
         level_shape = [int(level_ds.sizes[y_dim]), int(level_ds.sizes[x_dim])]
         return {"spatial:transform": level_transform, "spatial:shape": level_shape}
 

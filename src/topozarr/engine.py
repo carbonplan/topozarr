@@ -110,6 +110,7 @@ def downsample_level(
     Streams shard-sized output regions through ``topozarr_core.block_reduce``
     with reads/writes via zarr-python. Matches
     ``xarray.coarsen(boundary="trim")`` shape and skipna semantics.
+    Arrays are limited to 4 dimensions (kernel limit).
     """
     if len(stride) != src.ndim or src.ndim != dst.ndim:
         raise ValueError(

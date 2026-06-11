@@ -54,10 +54,13 @@ def test_pyramid_integration_robustness(ds_info, levels):
     ds, x_dim, y_dim = ds_info
 
     min_dim = min(ds.sizes[x_dim], ds.sizes[y_dim])
-    should_fail = min_dim < (2 ** (levels - 1))
 
-    if should_fail:
+    if min_dim < (2 ** (levels - 1)):
         with pytest.raises(ValueError, match="cannot coarsen"):
+            create_pyramid(ds, levels=levels, x_dim=x_dim, y_dim=y_dim)
+    elif min_dim == 1:
+        # single-pixel source dim: no spacing to derive a transform from
+        with pytest.raises(ValueError, match="cannot infer resolution"):
             create_pyramid(ds, levels=levels, x_dim=x_dim, y_dim=y_dim)
     else:
         pyramid = create_pyramid(ds, levels=levels, x_dim=x_dim, y_dim=y_dim)
@@ -118,11 +121,10 @@ def test_spatial_transform_invariants(ds_info, levels):
         level_ds = pyramid.level_templates[i]
         assert entry["spatial:shape"] == [level_ds.sizes["y"], level_ds.sizes["x"]]
 
-        # pixel size doubles per level, but only checkable when >1 pixel exists to
-        # derive a resolution from coordinates (single-pixel levels default to 1.0)
-        if level_ds.sizes["x"] > 1 and level_ds.sizes["y"] > 1:
-            level_x_res = entry["spatial:transform"][0]
-            assert level_x_res == pytest.approx(x_res * (2**i), rel=1e-5)
+        # pixel size doubles per level (single-pixel levels fall back to
+        # level-0 resolution * 2^level)
+        level_x_res = entry["spatial:transform"][0]
+        assert level_x_res == pytest.approx(x_res * (2**i), rel=1e-5)
 
 
 @settings(deadline=2000)

@@ -136,8 +136,9 @@ def create_pyramid(
         ``pyramid.write(store)`` to compute and write all levels.
 
     Raises:
-        ValueError: If ``ds`` has no CRS or ``chunks_per_shard`` is not a
-            power of 2 in the range 1–32.
+        ValueError: If ``ds`` has no CRS, ``chunks_per_shard`` is not a
+            power of 2 in the range 1–32, or a spatial variable has more
+            than 4 dimensions (topozarr-core kernel limit).
 
     Examples:
         ```python
@@ -154,6 +155,12 @@ def create_pyramid(
     """
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
+    for name, da in ds.data_vars.items():
+        if x_dim in da.dims and y_dim in da.dims and da.ndim > 4:
+            raise ValueError(
+                f"spatial variable {name!r} has {da.ndim} dimensions; "
+                "the topozarr-core kernel supports at most 4"
+            )
     crs_str = get_crs(ds)
     level_templates = build_level_templates(ds, levels, x_dim, y_dim)
 

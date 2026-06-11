@@ -58,6 +58,48 @@ def test_custom_dimensions(create_dataset):
     assert pyramid.level_templates[0].elevation.shape == (16, 16)
 
 
+def test_write_invalid_levels(create_dataset):
+    pyramid = create_pyramid(create_dataset(), levels=2)
+
+    with pytest.raises(ValueError, match=r"invalid levels \[2, 5\]"):
+        pyramid.write(zarr.storage.MemoryStore(), levels=[1, 2, 5])
+
+
+def test_non_uniform_coords_raise(create_dataset):
+    ds = create_dataset()
+    ds = ds.assign_coords(x=ds.x.values**2)
+
+    with pytest.raises(ValueError, match="'x' is not uniformly spaced"):
+        create_pyramid(ds, levels=2)
+
+
+def test_single_pixel_level_resolution(create_dataset):
+    # 4x4 -> 2x2 -> 1x1: the coarsest level has length-1 coords, so its
+    # resolution must come from level 0 (1.0 here) scaled by 2^level
+    ds = create_dataset(nx=4, ny=4)
+    pyramid = create_pyramid(ds, levels=3)
+
+    layout = pyramid.attrs["multiscales"]["layout"]
+    transform = layout[2]["spatial:transform"]
+    assert transform[0] == 4.0  # x resolution
+    assert transform[4] == 4.0  # y resolution
+
+
+def test_single_value_coord_raises(create_dataset):
+    ds = create_dataset(nx=1, ny=4)
+
+    with pytest.raises(ValueError, match="cannot infer resolution"):
+        create_pyramid(ds, levels=1)
+
+
+def test_spatial_var_ndim_limit(create_dataset):
+    ds = create_dataset()
+    ds["stacked"] = ds.elevation.expand_dims(a=2, b=2, c=2)
+
+    with pytest.raises(ValueError, match="supports at most 4"):
+        create_pyramid(ds, levels=2)
+
+
 def test_zarr_layer_metadata_written(create_dataset):
     ds = create_dataset()
     config = {"elevation": ZarrLayerVarConfig(clim=[0.0, 1.0], colormap="viridis")}
