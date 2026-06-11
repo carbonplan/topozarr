@@ -29,7 +29,17 @@ pyramid.write("pyramid.zarr")
 
 `levels` is the total number of resolution levels including the original. Level `0` is the original (highest) resolution; each subsequent level is coarsened by 2× per spatial dimension.
 
-`create_pyramid` returns a write plan. `pyramid.write(store)` does the work: level 0 is copied from the source dataset, then each level is block-reduced from the previously written one, streaming shard-sized regions through the Rust kernel on a thread pool. Tune parallelism with `max_workers`. Reduction semantics match `xarray.coarsen(boundary="trim")` exactly, including NaN / `_FillValue` handling.
+`create_pyramid` returns a write plan. `pyramid.write(store)` does the work: level 0 is copied from the source dataset, then each level is block-reduced from the previously written one, streaming shard-sized regions through the Rust kernel on a thread pool. Reduction semantics match `xarray.coarsen(boundary="trim")` exactly, including NaN / `_FillValue` handling.
+
+## Progress and memory
+
+Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written regions (requires `tqdm` to be installed):
+
+```python
+pyramid.write("pyramid.zarr", progress=True)
+```
+
+By default the thread pool size is derived from the CPU count and available RAM; peak memory is roughly `max_workers * 5 * region_bytes`. Pass an explicit `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 read regions on chunked sources. For bounded memory on large stores, open the source lazily (e.g. `xr.open_zarr(store, chunks=None)`) so regions are materialized one at a time. See [Design](design.md) for the full memory model.
 
 ## Visualization hints
 
