@@ -41,6 +41,8 @@ pyramid.write("pyramid.zarr", progress=True)
 
 By default the thread pool size is derived from the CPU count and available RAM; peak memory is roughly `max_workers * 5 * region_bytes`. Pass an explicit `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 read regions on chunked sources. For bounded memory on large stores, open the source lazily (e.g. `xr.open_zarr(store, chunks=None)`) so regions are materialized one at a time. See [Design](design.md) for the full memory model.
 
+By default each coarser level is re-read from the store and block-reduced. Pass `keep_levels_in_memory=True` to fuse the reduce into the write pass instead — each level is kept in RAM and the next level is produced without any store reads. `None` (default) enables this automatically when the higher levels fit in available RAM.
+
 ## Visualization hints
 
 Embed colormap and color-range hints for [zarr-layer](https://zarr-layer.demo.carbonplan.org/) directly in the pyramid metadata:
@@ -87,6 +89,8 @@ from zarr.storage import ObjectStore
 store = ObjectStore(
     from_url("s3://carbonplan-scratch/topozarr/air.zarr", region="us-west-2")
 )
+# raise async concurrency for higher S3 throughput
+zarr.config.set({"async.concurrency": 128})
 pyramid.write(store, mode="w")
 ```
 
@@ -106,7 +110,7 @@ session.commit("write pyramid")
 
 ## Optional: zarrs codec pipeline
 
-Compression codec work can optionally be routed through the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline. It plugs in at the codec layer and works with any store backend:
+Compression codec work can optionally be routed through the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline:
 
 ```bash
 uv add zarrs
@@ -116,3 +120,5 @@ uv add zarrs
 import zarr
 zarr.config.set({"codec_pipeline.path": "zarrs.ZarrsCodecPipeline"})
 ```
+
+**Note:** zarrs is faster on local and NVMe storage but slower with object stores (S3, GCS) due to a connection-pooling issue ([zarrs-python#139](https://github.com/zarrs/zarrs-python/issues/139)). Use the default pipeline for cloud writes.

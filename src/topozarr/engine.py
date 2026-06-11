@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import math
 import os
+import threading
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from itertools import product
+from time import perf_counter
 from typing import Any
 
 import numpy as np
@@ -20,7 +22,7 @@ DEFAULT_MAX_REGION_BYTES = 256 * 1024 * 1024
 
 # rough peak-memory multiplier per in-flight region: source block, contiguous
 # copy, reduced output, and zarr codec buffers
-_REGION_MEM_FACTOR = 5
+REGION_MEM_FACTOR = 5
 
 
 def default_max_workers(region_bytes: int) -> int:
@@ -31,8 +33,42 @@ def default_max_workers(region_bytes: int) -> int:
     """
     cpu = os.cpu_count() or 4
     mem_budget = psutil.virtual_memory().available // 2
-    by_mem = mem_budget // max(1, _REGION_MEM_FACTOR * region_bytes)
+    by_mem = mem_budget // max(1, REGION_MEM_FACTOR * region_bytes)
     return max(1, min(cpu * 2, int(by_mem)))
+
+
+class RegionTimer:
+    """Thread-safe accumulator of per-region timings.
+
+    Seconds are summed across worker threads, so totals can exceed wall time;
+    divide by the worker count for an average per-thread split. ``block_s``
+    covers ``get_block`` (source read plus any reduction); ``reduce_s`` is the
+    kernel portion of that, so read time is ``block_s - reduce_s``.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self.regions = 0
+        self.block_s = 0.0
+        self.reduce_s = 0.0
+        self.write_s = 0.0
+
+    def add(
+        self, *, block_s: float = 0.0, reduce_s: float = 0.0, write_s: float = 0.0
+    ) -> None:
+        with self._lock:
+            self.regions += 1 if block_s or write_s else 0
+            self.block_s += block_s
+            self.reduce_s += reduce_s
+            self.write_s += write_s
+
+    def as_dict(self) -> dict[str, float | int]:
+        return {
+            "regions": self.regions,
+            "read_s": round(self.block_s - self.reduce_s, 3),
+            "reduce_s": round(self.reduce_s, 3),
+            "write_s": round(self.write_s, 3),
+        }
 
 
 def shard_aligned_regions(
@@ -60,16 +96,38 @@ def _write_regions(
     region_shape: tuple[int, ...] | None = None,
     executor: ThreadPoolExecutor | None = None,
     on_region: Callable[[], None] | None = None,
+    on_block: Callable[[Region, np.ndarray], None] | None = None,
+    timer: RegionTimer | None = None,
 ) -> list[Future[None]]:
     """Write every region of ``dst`` via ``get_block`` on a thread pool.
 
     With an external ``executor``, tasks are submitted and the pending futures
     returned for the caller to drain; otherwise a pool of ``max_workers`` is
     created, drained, and an empty list returned.
+
+    ``on_block``, if provided, is called with ``(region, block)`` after the
+    block is materialized but before it is written.  The caller is responsible
+    for thread-safety of any shared state mutated inside ``on_block`` (disjoint
+    shard-aligned regions guarantee no two threads touch the same output slice).
+    Time spent in ``on_block`` is reported as ``reduce_s`` in the timer so that
+    ``read_s = block_s - reduce_s`` remains the pure read time.
     """
 
     def one(region: Region) -> None:
-        dst[region] = get_block(region)
+        t0 = perf_counter()
+        block = get_block(region)
+        t1 = perf_counter()
+        if on_block is not None:
+            on_block(region, block)
+        t2 = perf_counter()
+        dst[region] = block
+        if timer is not None:
+            fused_s = (t2 - t1) if on_block is not None else 0.0
+            timer.add(
+                block_s=(t1 - t0) + fused_s,
+                reduce_s=fused_s,
+                write_s=perf_counter() - t2,
+            )
         if on_region is not None:
             on_region()
 
@@ -113,6 +171,8 @@ def copy_array(
     max_workers: int | None = None,
     executor: ThreadPoolExecutor | None = None,
     on_region: Callable[[], None] | None = None,
+    on_block: Callable[[Region, np.ndarray], None] | None = None,
+    timer: RegionTimer | None = None,
 ) -> list[Future[None]]:
     """Write a region-indexable array into ``dst`` region by region.
 
@@ -121,6 +181,10 @@ def copy_array(
     each region is materialized individually, keeping peak memory at
     ``max_workers x region_size``. Pass ``source_chunks`` to widen regions to
     the source chunk grid so each source chunk is decoded once.
+
+    For in-memory ``values`` (``np.ndarray``) the contiguity copy is skipped:
+    slicing returns a (possibly strided) view, and both the reduce kernel and
+    zarr setitem accept strided input, so copying would only waste memory.
     """
     shape = copy_region_shape(
         dst.shards or dst.chunks,
@@ -129,13 +193,24 @@ def copy_array(
         source_chunks,
         max_region_bytes,
     )
+    if isinstance(values, np.ndarray):
+
+        def get_block(region: Region) -> np.ndarray:
+            return values[region]
+    else:
+
+        def get_block(region: Region) -> np.ndarray:
+            return np.ascontiguousarray(values[region])
+
     return _write_regions(
         dst,
-        lambda region: np.ascontiguousarray(values[region]),
+        get_block,
         max_workers,
         region_shape=shape,
         executor=executor,
         on_region=on_region,
+        on_block=on_block,
+        timer=timer,
     )
 
 
@@ -150,6 +225,7 @@ def downsample_level(
     max_workers: int | None = None,
     executor: ThreadPoolExecutor | None = None,
     on_region: Callable[[], None] | None = None,
+    timer: RegionTimer | None = None,
 ) -> list[Future[None]]:
     """Block-reduce ``src`` into ``dst`` by integer ``stride`` per axis.
 
@@ -169,8 +245,12 @@ def downsample_level(
             for s, f, n in zip(region, stride, src.shape)
         )
         block = np.ascontiguousarray(src[in_sel])
-        return block_reduce(block, stride, method, fill_value, skipna)
+        t0 = perf_counter()
+        out = block_reduce(block, stride, method, fill_value, skipna)
+        if timer is not None:
+            timer.add(reduce_s=perf_counter() - t0)
+        return out
 
     return _write_regions(
-        dst, get_block, max_workers, executor=executor, on_region=on_region
+        dst, get_block, max_workers, executor=executor, on_region=on_region, timer=timer
     )

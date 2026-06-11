@@ -11,7 +11,7 @@ dependencies = [
     "topozarr-core>=0.1.0,<0.2",
     "xarray>=2025.9.0",
     "xproj>=0.2.1",
-    "zarr>=3.0.0",
+    "zarr>=3.2.1",
 ]
 
 [build-system]
@@ -60,6 +60,13 @@ docs = [
     "black>=26.5.1",
     "mkdocs-material>=9",
     "mkdocstrings[python]>=0.25",
+]
+bench = [
+    "click>=8",
+    "coiled>=1.0",
+    "icechunk>=1.1.19",
+    "obstore>=0.9.1",
+    "zarrs>=0.1",
 ]
 
 
