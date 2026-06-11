@@ -49,15 +49,22 @@ class RegionTimer:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self.regions = 0
+        self.skipped = 0
         self.block_s = 0.0
         self.reduce_s = 0.0
         self.write_s = 0.0
 
     def add(
-        self, *, block_s: float = 0.0, reduce_s: float = 0.0, write_s: float = 0.0
+        self,
+        *,
+        block_s: float = 0.0,
+        reduce_s: float = 0.0,
+        write_s: float = 0.0,
+        skipped: bool = False,
     ) -> None:
         with self._lock:
             self.regions += 1 if block_s or write_s else 0
+            self.skipped += 1 if skipped else 0
             self.block_s += block_s
             self.reduce_s += reduce_s
             self.write_s += write_s
@@ -65,6 +72,7 @@ class RegionTimer:
     def as_dict(self) -> dict[str, float | int]:
         return {
             "regions": self.regions,
+            "skipped": self.skipped,
             "read_s": round(self.block_s - self.reduce_s, 3),
             "reduce_s": round(self.reduce_s, 3),
             "write_s": round(self.write_s, 3),
@@ -89,6 +97,15 @@ def shard_aligned_regions(
         )
 
 
+def _is_all_fill(block: np.ndarray, fill_value: Any) -> bool:
+    """True if every element of ``block`` equals ``fill_value`` (NaN-aware)."""
+    if fill_value is None:
+        return False
+    if fill_value != fill_value:  # NaN fill
+        return bool(np.isnan(block).all())
+    return bool((block == fill_value).all())
+
+
 def _write_regions(
     dst: zarr.Array,
     get_block: Callable[[Region], np.ndarray],
@@ -98,6 +115,7 @@ def _write_regions(
     on_region: Callable[[], None] | None = None,
     on_block: Callable[[Region, np.ndarray], None] | None = None,
     timer: RegionTimer | None = None,
+    skip_empty: bool = True,
 ) -> list[Future[None]]:
     """Write every region of ``dst`` via ``get_block`` on a thread pool.
 
@@ -111,7 +129,14 @@ def _write_regions(
     shard-aligned regions guarantee no two threads touch the same output slice).
     Time spent in ``on_block`` is reported as ``reduce_s`` in the timer so that
     ``read_s = block_s - reduce_s`` remains the pure read time.
+
+    With ``skip_empty`` (default), regions whose block is entirely
+    ``dst.fill_value`` are not written. Besides saving the encode + upload,
+    this avoids zarr's delete-on-empty-chunk behavior, which issues a store
+    delete per all-fill shard even on a fresh array. Disable when ``dst``
+    may hold stale data that an all-fill write should clear.
     """
+    fill_value = dst.fill_value
 
     def one(region: Region) -> None:
         t0 = perf_counter()
@@ -120,13 +145,16 @@ def _write_regions(
         if on_block is not None:
             on_block(region, block)
         t2 = perf_counter()
-        dst[region] = block
+        skipped = skip_empty and _is_all_fill(block, fill_value)
+        if not skipped:
+            dst[region] = block
         if timer is not None:
             fused_s = (t2 - t1) if on_block is not None else 0.0
             timer.add(
                 block_s=(t1 - t0) + fused_s,
                 reduce_s=fused_s,
                 write_s=perf_counter() - t2,
+                skipped=skipped,
             )
         if on_region is not None:
             on_region()
@@ -173,6 +201,7 @@ def copy_array(
     on_region: Callable[[], None] | None = None,
     on_block: Callable[[Region, np.ndarray], None] | None = None,
     timer: RegionTimer | None = None,
+    skip_empty: bool = True,
 ) -> list[Future[None]]:
     """Write a region-indexable array into ``dst`` region by region.
 
@@ -211,6 +240,7 @@ def copy_array(
         on_region=on_region,
         on_block=on_block,
         timer=timer,
+        skip_empty=skip_empty,
     )
 
 
@@ -226,6 +256,7 @@ def downsample_level(
     executor: ThreadPoolExecutor | None = None,
     on_region: Callable[[], None] | None = None,
     timer: RegionTimer | None = None,
+    skip_empty: bool = True,
 ) -> list[Future[None]]:
     """Block-reduce ``src`` into ``dst`` by integer ``stride`` per axis.
 
@@ -252,5 +283,11 @@ def downsample_level(
         return out
 
     return _write_regions(
-        dst, get_block, max_workers, executor=executor, on_region=on_region, timer=timer
+        dst,
+        get_block,
+        max_workers,
+        executor=executor,
+        on_region=on_region,
+        timer=timer,
+        skip_empty=skip_empty,
     )

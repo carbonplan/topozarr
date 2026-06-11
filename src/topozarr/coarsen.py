@@ -189,8 +189,16 @@ def create_pyramid(
         layer_hints=layer_hints,
     )
 
+    # _FillValue if declared; else NaN for floats (matches xarray's zarr
+    # default and lets the engine skip all-fill regions)
     fill_values = {
-        name: da.encoding.get("_FillValue", da.attrs.get("_FillValue"))
+        name: da.encoding.get(
+            "_FillValue",
+            da.attrs.get(
+                "_FillValue",
+                np.nan if np.issubdtype(da.dtype, np.floating) else None,
+            ),
+        )
         for name, da in ds.data_vars.items()
     }
 

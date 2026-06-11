@@ -187,6 +187,65 @@ def test_copy_array_streams_regions():
     assert starts == {(0, 0), (0, 16), (16, 0), (16, 16)}
 
 
+class _CountingStore(zarr.storage.MemoryStore):
+    """MemoryStore that records set/delete keys."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.set_keys: list[str] = []
+        self.delete_keys: list[str] = []
+
+    async def set(self, key, value):
+        self.set_keys.append(key)
+        await super().set(key, value)
+
+    async def delete(self, key):
+        self.delete_keys.append(key)
+        await super().delete(key)
+
+
+def test_copy_array_skips_all_fill_regions():
+    from topozarr.engine import RegionTimer
+
+    store = _CountingStore()
+    group = zarr.open_group(store, mode="w")
+    data = np.full((16, 16), np.nan, dtype="f4")
+    data[:8, :8] = 1.0
+    dst = group.create_array(
+        "a",
+        shape=data.shape,
+        dtype="f4",
+        chunks=(4, 4),
+        shards=(8, 8),
+        fill_value=np.nan,
+    )
+
+    timer = RegionTimer()
+    copy_array(data, dst, timer=timer)
+
+    # only the non-fill shard is written; no deletes for the all-NaN shards
+    assert [k for k in store.set_keys if "/c/" in k] == ["a/c/0/0"]
+    assert store.delete_keys == []
+    assert timer.skipped == 3
+    np.testing.assert_array_equal(dst[:], data)
+
+
+def test_copy_array_skip_empty_disabled_writes_all_regions():
+    data = np.full((16, 16), np.nan, dtype="f4")
+    data[:8, :8] = 1.0
+    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
+    dst = group.create_array(
+        "a",
+        shape=data.shape,
+        dtype="f4",
+        chunks=(4, 4),
+        shards=(8, 8),
+        fill_value=np.nan,
+    )
+    copy_array(data, dst, skip_empty=False)
+    np.testing.assert_array_equal(dst[:], data)
+
+
 def test_copy_array_lazy_zarr_source():
     rng = np.random.default_rng(6)
     data = rng.random((30, 20)).astype("f4")

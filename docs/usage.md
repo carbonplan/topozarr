@@ -87,12 +87,23 @@ from obstore.store import from_url
 from zarr.storage import ObjectStore
 
 store = ObjectStore(
-    from_url("s3://carbonplan-scratch/topozarr/air.zarr", region="us-west-2")
+    from_url(
+        "s3://carbonplan-scratch/topozarr/air.zarr",
+        region="us-west-2",
+        # defaults (5s connect / 30s total) can time out under heavy
+        # concurrency; symptom: GenericError with "Connect, TimedOut"
+        client_options={"connect_timeout": "30s", "timeout": "120s"},
+    )
 )
 # raise async concurrency for higher S3 throughput
 zarr.config.set({"async.concurrency": 128})
 pyramid.write(store, mode="w")
 ```
+
+If connect timeouts persist on large instances, lower the request fan-out:
+reduce `zarr.config.set({"async.concurrency": ...})` or pass a smaller
+`max_workers` to `pyramid.write` (total in-flight requests is roughly
+`max_workers * async.concurrency`).
 
 ### Icechunk
 

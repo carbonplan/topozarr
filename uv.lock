@@ -3444,7 +3444,7 @@ wheels = [
 
 [[package]]
 name = "topozarr"
-version = "0.0.91"
+version = "0.0.92"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
@@ -3457,22 +3457,18 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-demo = [
+tutorial = [
     { name = "boto3" },
     { name = "click" },
     { name = "cloudpathlib", extra = ["s3"] },
     { name = "h5netcdf" },
     { name = "h5py" },
     { name = "icechunk" },
-    { name = "obstore" },
-    { name = "virtualizarr" },
-    { name = "zarr" },
-]
-tutorial = [
-    { name = "icechunk" },
     { name = "netcdf4" },
     { name = "obstore" },
     { name = "pooch" },
+    { name = "virtualizarr" },
+    { name = "zarr" },
 ]
 
 [package.dev-dependencies]
@@ -3518,28 +3514,26 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "boto3", marker = "extra == 'demo'" },
-    { name = "click", marker = "extra == 'demo'" },
-    { name = "cloudpathlib", extras = ["s3"], marker = "extra == 'demo'" },
-    { name = "h5netcdf", marker = "extra == 'demo'" },
-    { name = "h5py", marker = "extra == 'demo'" },
-    { name = "icechunk", marker = "extra == 'demo'", specifier = ">=1.1.19" },
-    { name = "icechunk", marker = "extra == 'tutorial'" },
+    { name = "boto3", marker = "extra == 'tutorial'" },
+    { name = "click", marker = "extra == 'tutorial'" },
+    { name = "cloudpathlib", extras = ["s3"], marker = "extra == 'tutorial'" },
+    { name = "h5netcdf", marker = "extra == 'tutorial'" },
+    { name = "h5py", marker = "extra == 'tutorial'" },
+    { name = "icechunk", marker = "extra == 'tutorial'", specifier = ">=1.1.19" },
     { name = "netcdf4", marker = "extra == 'tutorial'" },
     { name = "numpy" },
-    { name = "obstore", marker = "extra == 'demo'" },
     { name = "obstore", marker = "extra == 'tutorial'" },
     { name = "pooch", marker = "extra == 'tutorial'" },
     { name = "psutil", specifier = ">=5.9" },
     { name = "pyproj" },
     { name = "topozarr-core", editable = "core" },
-    { name = "virtualizarr", marker = "extra == 'demo'", git = "https://github.com/zarr-developers/VirtualiZarr?rev=3c10c433b29dddad98169c298d36ead192f0aad1" },
+    { name = "virtualizarr", marker = "extra == 'tutorial'", git = "https://github.com/zarr-developers/VirtualiZarr?rev=3c10c433b29dddad98169c298d36ead192f0aad1" },
     { name = "xarray", specifier = ">=2025.9.0" },
     { name = "xproj", specifier = ">=0.2.1" },
     { name = "zarr", specifier = ">=3.2.1" },
-    { name = "zarr", marker = "extra == 'demo'" },
+    { name = "zarr", marker = "extra == 'tutorial'" },
 ]
-provides-extras = ["tutorial", "demo"]
+provides-extras = ["tutorial"]
 
 [package.metadata.requires-dev]
 bench = [
