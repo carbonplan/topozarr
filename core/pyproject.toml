@@ -1,6 +1,6 @@
 [project]
 name = "topozarr-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "Block-reduction kernel for topozarr pyramid generation"
 readme = "README.md"
 requires-python = ">=3.12"
