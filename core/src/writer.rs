@@ -231,9 +231,9 @@ fn s3_storage(
     let async_store: AsyncReadableWritableListableStorage = if prefix.is_empty() {
         Arc::new(AsyncObjectStore::new(s3))
     } else {
-        Arc::new(AsyncObjectStore::new(object_store::prefix::PrefixStore::new(
-            s3, prefix,
-        )))
+        Arc::new(AsyncObjectStore::new(
+            object_store::prefix::PrefixStore::new(s3, prefix),
+        ))
     };
     // sync adapter handles array-open reads; writes go async via PutQueue
     let sync: ReadableWritableListableStorage = Arc::new(AsyncToSyncStorageAdapter::new(
@@ -407,7 +407,12 @@ impl RustWriter {
                 // (a plain to_owned would keep F-order memory and transpose).
                 let owned: Option<Vec<$t>> = match view.as_slice() {
                     Some(_) => None,
-                    None => Some(view.as_standard_layout().to_owned().into_raw_vec_and_offset().0),
+                    None => Some(
+                        view.as_standard_layout()
+                            .to_owned()
+                            .into_raw_vec_and_offset()
+                            .0,
+                    ),
                 };
                 let data: &[$t] = match &owned {
                     Some(v) => v.as_slice(),
