@@ -31,6 +31,43 @@ pyramid.write("pyramid.zarr")
 
 `create_pyramid` returns a write plan. `pyramid.write(store)` does the work: level 0 is copied from the source dataset, then each level is block-reduced from the previously written one, streaming shard-sized regions through the Rust kernel on a thread pool. Reduction semantics match `xarray.coarsen(boundary="trim")` exactly, including NaN / `_FillValue` handling.
 
+!!! warning "Single-process write"
+    `write()` runs in the calling process on a local thread pool — it is not Dask-distributed-aware. A lazy/Dask-backed *source* is fine (reads are pulled into the writing process), but don't drive `write()` from distributed workers or run it concurrently against the same store: the `io="rust"` writer isn't serializable, and parallel writes to the same shard can corrupt output. For a Dask-distributed-compatible path, see [Dask distributed](#dask-distributed) below.
+
+## Dask distributed
+
+The default `write()` path uses the topozarr-core Rust kernel and runs single-process. Two alternatives hand the work to xarray/Dask:
+
+**`engine="xarray"`** — coarsens with `xarray.coarsen` and writes each level via `Dataset.to_zarr`:
+
+```python
+pyramid.write("pyramid.zarr", engine="xarray")
+```
+
+Works with a Dask distributed cluster when the source dataset is Dask-backed. Sharding, `io`, `max_workers`, `keep_levels_in_memory`, `progress`, and `stats` options are not available on this path.
+
+**`pyramid.as_datatree()`** — returns a lazy `xr.DataTree` with all levels coarsened. Full control over the write is left to you:
+
+```python
+dt = pyramid.as_datatree()
+# pyramid.encoding is already in the format DataTree.to_zarr expects
+dt.to_zarr("pyramid.zarr", zarr_format=3, consolidated=False,
+           encoding=pyramid.encoding)
+```
+
+With a Dask distributed cluster:
+
+```python
+from dask.distributed import Client
+
+with Client(...):
+    dt = pyramid.as_datatree()
+    dt.to_zarr("s3://bucket/pyramid.zarr", zarr_format=3,
+               consolidated=False, encoding=pyramid.encoding)
+```
+
+Use `as_datatree()` when you need fine-grained control: custom schedulers, icechunk sessions, or writing only specific levels.
+
 ## Progress and memory
 
 Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written regions (requires `tqdm` to be installed):
@@ -133,3 +170,15 @@ zarr.config.set({"codec_pipeline.path": "zarrs.ZarrsCodecPipeline"})
 ```
 
 **Note:** zarrs is faster on local and NVMe storage but slower with object stores (S3, GCS) due to a connection-pooling issue ([zarrs-python#139](https://github.com/zarrs/zarrs-python/issues/139)). Use the default pipeline for cloud writes.
+
+## Experimental: native Rust write path
+
+By default pyramids are written through `zarr-python`. Passing `io="rust"` instead encodes and stores the spatial variables natively in the `topozarr-core` Rust kernel (via the bundled [zarrs](https://github.com/zarrs/zarrs) crate — no extra install), bypassing zarr-python's per-region sync bridge:
+
+```python
+pyramid.write("s3://bucket/pyramid.zarr", io="rust")
+```
+
+It can be noticeably faster on object stores (~25% on S3 in our benchmarks) because encode and upload overlap on a shared connection pool. Metadata, coordinates, and non-spatial variables still go through zarr-python. Supports local paths, `s3://` URLs, `LocalStore`, and obstore-backed `ObjectStore` targets.
+
+**Experimental:** the API may change. This is unrelated to the zarrs codec pipeline above (a zarr-python codec backend); `io="rust"` is a separate write path. Leave `io="python"` (the default) for the stable path.
