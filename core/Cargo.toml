@@ -18,6 +18,10 @@ extension-module = ["pyo3/extension-module"]
 pyo3 = { version = "0.28", features = ["abi3-py312"] }
 numpy = "0.28"
 ndarray = { version = "0.17", features = ["rayon"] }
+zarrs = { version = "0.23", features = ["async", "zstd", "crc32c"] }
+zarrs_object_store = "0.6"
+object_store = { version = "0.13", features = ["aws"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
 
 [profile.release]
 lto = true

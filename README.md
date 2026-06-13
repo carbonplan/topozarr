@@ -24,7 +24,7 @@ uv add topozarr
 pip install topozarr
 ```
 
-Pyramids are computed by `topozarr-core`, a small Rust kernel (installed automatically as a wheel), and written with `zarr-python` — no Dask involved. The `tutorial` extra includes everything needed to run the examples below:
+Pyramids are computed by `topozarr-core`, a small Rust kernel (installed automatically as a wheel), and written with `zarr-python`. An `engine="xarray"` path and `pyramid.as_datatree()` are available for Dask-distributed workflows. The `tutorial` extra includes everything needed to run the examples below:
 
 ```bash
 uv add 'topozarr[tutorial]'
@@ -137,6 +137,18 @@ uv add zarrs
 import zarr
 zarr.config.set({"codec_pipeline.path": "zarrs.ZarrsCodecPipeline"})
 ```
+
+### Experimental: native Rust write path
+
+Pyramids are written through `zarr-python` by default. Passing `io="rust"` instead encodes and stores the spatial variables natively in the `topozarr-core` Rust kernel (via the bundled [zarrs](https://github.com/zarrs/zarrs) crate — no extra install), overlapping encode and upload on a shared connection pool:
+
+```python
+pyramid.write("s3://bucket/pyramid.zarr", io="rust")
+```
+
+It can be noticeably faster on object stores (~25% on S3 in our benchmarks). Metadata and non-spatial variables still go through zarr-python. **Experimental** — the API may change; this is a separate write path, unrelated to the zarrs codec pipeline above.
+
+> **Note:** `write()` runs in the calling process on a local thread pool — it is not Dask-distributed-aware. A lazy/Dask-backed source is fine, but don't drive `write()` from distributed workers or write the same store concurrently.
 
 ## Contributing
 

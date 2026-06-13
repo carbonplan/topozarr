@@ -210,6 +210,8 @@ class Pyramid:
         progress: bool = False,
         stats: bool = False,
         keep_levels_in_memory: bool | None = None,
+        io: Literal["python", "rust"] = "python",
+        engine: Literal["native", "xarray"] = "native",
     ) -> dict[str, Any] | None:
         """Compute and write pyramid levels to a Zarr store.
 
@@ -253,6 +255,26 @@ class Pyramid:
                 ``True`` forces fusion and raises ``MemoryError`` if the budget
                 is exceeded.  ``False`` disables fusion and always re-reads from
                 the store.
+            io: ``"python"`` (default) writes everything through zarr-python.
+                ``"rust"`` encodes and stores spatial-variable regions natively
+                in the ``topozarr-core`` kernel (a bundled Rust extension, no
+                extra install) -- one shared connection pool, no per-region trip
+                through zarr-python's sync bridge. Metadata, coords, and
+                non-spatial variables still go through zarr-python. Supports
+                local paths, ``s3://`` URLs, ``LocalStore``, and obstore-backed
+                ``ObjectStore`` targets. This is unrelated to the optional
+                ``zarrs`` codec pipeline (a separate zarr-python codec backend).
+            engine: ``"native"`` (default) uses the topozarr-core Rust kernel
+                for coarsening — fast on a single machine but incompatible with
+                Dask distributed. ``"xarray"`` delegates coarsening to
+                ``xarray.DataArray.coarsen`` and writes each level with
+                ``Dataset.to_zarr``; this path is Dask-distributed-compatible
+                when the source dataset is backed by Dask arrays. When
+                ``engine="xarray"``, the ``io``, ``max_workers``,
+                ``keep_levels_in_memory``, ``progress``, and ``stats`` kwargs
+                are ignored. For full control over the write (custom scheduler,
+                icechunk, etc.) use
+                [as_datatree][topozarr.pyramid.Pyramid.as_datatree] instead.
 
         Examples:
             Write all levels to a local store:
@@ -267,6 +289,11 @@ class Pyramid:
             pyramid.write("pyramid.zarr", mode="a", levels=[1, 2])
             ```
         """
+        if engine not in ("native", "xarray"):
+            raise ValueError(f"engine must be 'native' or 'xarray', got {engine!r}")
+        if engine == "xarray":
+            return self._write_xarray(store, mode=mode, levels=levels)
+
         if levels is not None:
             invalid = sorted(set(levels) - set(self.level_templates))
             if invalid:
@@ -276,6 +303,9 @@ class Pyramid:
 
         write_levels = list(range(self.levels)) if levels is None else list(levels)
         spatial_vars = self._spatial_vars()
+
+        if io not in ("python", "rust"):
+            raise ValueError(f"io must be 'python' or 'rust', got {io!r}")
 
         pbar = None
         on_region: Callable[[], None] | None = None
@@ -296,6 +326,12 @@ class Pyramid:
 
         root = zarr.open_group(store, mode=mode, zarr_format=3)
         root.attrs.update(self.attrs)
+
+        rust_writer = None
+        if io == "rust":
+            from .rust_io import make_rust_writer
+
+            rust_writer = make_rust_writer(store)
 
         all_stats: dict[str, Any] = {}
         try:
@@ -365,10 +401,14 @@ class Pyramid:
                             mem_source=mem_levels.get(name),
                             next_level_arr=next_mem.get(name),
                             next_level_stride=next_stride.get(name),
+                            rust_writer=rust_writer,
                         )
                     ]
                     for future in futures:
                         future.result()
+
+                if rust_writer is not None:
+                    rust_writer.flush()
 
                 mem_levels = next_mem
 
@@ -385,6 +425,14 @@ class Pyramid:
         finally:
             if pbar is not None:
                 pbar.close()
+        if stats and rust_writer is not None:
+            # cumulative across all levels; seconds summed over threads/tasks.
+            # write_s is worker-thread encode time; on S3, PUTs run async and
+            # overlap encode, so put_s is reported separately (not subtracted)
+            # and encode_s == write_s.
+            rust_stats = dict(rust_writer.stats())
+            rust_stats["encode_s"] = round(rust_stats["write_s"], 3)
+            all_stats["rust_io"] = rust_stats
         return all_stats if stats else None
 
     def _write_var(
@@ -401,6 +449,7 @@ class Pyramid:
         mem_source: np.ndarray | None = None,
         next_level_arr: np.ndarray | None = None,
         next_level_stride: tuple[int, ...] | None = None,
+        rust_writer: Any | None = None,
     ) -> list[Future[None]]:
         template_da = self.level_templates[lvl][name]
         source_da = self.source[name]
@@ -430,6 +479,13 @@ class Pyramid:
                 next_level_arr, next_level_stride, self.method, fill
             )
 
+        write_region = None
+        if rust_writer is not None:
+            node_path = f"/{dst.path}"
+
+            def write_region(region: Region, block: np.ndarray) -> None:
+                rust_writer.write_region(node_path, [s.start for s in region], block)
+
         if lvl == 0 or mem_source is not None:
             values: Any = mem_source if mem_source is not None else source_da.variable
             sc = None if mem_source is not None else source_chunks(source_da)
@@ -442,6 +498,7 @@ class Pyramid:
                 on_region=on_region,
                 on_block=on_block,
                 timer=timer,
+                write_region=write_region,
             )
 
         stride = tuple(
@@ -456,4 +513,84 @@ class Pyramid:
             executor=executor,
             on_region=on_region,
             timer=timer,
+            write_region=write_region,
         )
+
+    def _write_xarray(
+        self,
+        store: Any,
+        *,
+        mode: str = "w",
+        levels: list[int] | None = None,
+    ) -> None:
+        """Coarsen and write pyramid levels using xarray.coarsen (Dask-compatible).
+
+        Each level is produced by chaining 2x coarsen operations on the source
+        dataset, then written via Dataset.to_zarr. Sharding is not applied.
+        """
+        write_levels = list(range(self.levels)) if levels is None else list(levels)
+        if levels is not None:
+            invalid = sorted(set(write_levels) - set(self.level_templates))
+            if invalid:
+                raise ValueError(
+                    f"invalid levels {invalid}; pyramid has levels 0-{self.levels - 1}"
+                )
+
+        root = zarr.open_group(store, mode=mode, zarr_format=3)
+        root.attrs.update(self.attrs)
+
+        # Build lazily-chained coarsened datasets; level 0 = source,
+        # level N = coarsen(level N-1, boundary="trim")
+        ds_chain: list[xr.Dataset] = [self.source]
+        for _ in range(self.levels - 1):
+            prev = ds_chain[-1]
+            coarsened = getattr(
+                prev.coarsen({self.x_dim: 2, self.y_dim: 2}, boundary="trim"),
+                self.method,
+            )()
+            ds_chain.append(coarsened)
+
+        for lvl in write_levels:
+            ds_lvl = ds_chain[lvl]
+            enc_lvl = self.encoding[f"/{lvl}"]
+            zarr_enc = {
+                name: enc_lvl[name] for name in ds_lvl.data_vars if name in enc_lvl
+            }
+            ds_lvl.to_zarr(
+                store,
+                group=str(lvl),
+                mode="a",
+                zarr_format=3,
+                consolidated=False,
+                encoding=zarr_enc if zarr_enc else None,
+            )
+
+    def as_datatree(self) -> xr.DataTree:
+        """Return a lazy DataTree with all pyramid levels coarsened via xarray.
+
+        Each level is produced by chaining 2x ``xarray.coarsen`` operations on
+        the source dataset. If the source is Dask-backed, the returned tree is
+        fully lazy and can be written with ``DataTree.to_zarr`` on a Dask
+        distributed cluster.
+
+        ``self.encoding`` is already in the format expected by
+        ``DataTree.to_zarr``'s ``encoding`` kwarg:
+
+        ```python
+        dt = pyramid.as_datatree()
+        dt.to_zarr(store, zarr_format=3, consolidated=False,
+                   encoding=pyramid.encoding)
+        ```
+        """
+        ds_chain: list[xr.Dataset] = [self.source]
+        for _ in range(self.levels - 1):
+            prev = ds_chain[-1]
+            coarsened = getattr(
+                prev.coarsen({self.x_dim: 2, self.y_dim: 2}, boundary="trim"),
+                self.method,
+            )()
+            ds_chain.append(coarsened)
+
+        root_ds = xr.Dataset(attrs=self.attrs)
+        children = {str(lvl): xr.DataTree(ds_chain[lvl]) for lvl in range(self.levels)}
+        return xr.DataTree(root_ds, children=children)

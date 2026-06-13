@@ -161,7 +161,8 @@ def create_pyramid(
         if x_dim in da.dims and y_dim in da.dims and da.ndim > 4:
             raise ValueError(
                 f"spatial variable {name!r} has {da.ndim} dimensions; "
-                "the topozarr-core kernel supports at most 4"
+                "the native engine (topozarr-core) supports at most 4 "
+                "(use engine='xarray' in pyramid.write() to lift this limit)"
             )
     crs_str = get_crs(ds)
     level_templates = build_level_templates(ds, levels, x_dim, y_dim)

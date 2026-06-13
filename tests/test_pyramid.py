@@ -284,6 +284,59 @@ def test_fused_stats_keys_unchanged(create_dataset):
     assert out["0"]["read_s"] >= 0
 
 
+@pytest.mark.parametrize("method", ["mean", "max", "min"])
+def test_xarray_engine_matches_native(create_dataset, method):
+    ds = create_dataset(nx=16, ny=16)
+    pyramid = create_pyramid(ds, levels=3, method=method)
+
+    native_store = zarr.storage.MemoryStore()
+    pyramid.write(native_store, engine="native")
+
+    xarray_store = zarr.storage.MemoryStore()
+    pyramid.write(xarray_store, engine="xarray")
+
+    native_dt = xr.open_datatree(native_store, engine="zarr", consolidated=False)
+    xarray_dt = xr.open_datatree(xarray_store, engine="zarr", consolidated=False)
+
+    for lvl in ("0", "1", "2"):
+        np.testing.assert_allclose(
+            native_dt[lvl].ds.elevation.values,
+            xarray_dt[lvl].ds.elevation.values,
+            rtol=1e-5,
+            err_msg=f"level {lvl} mismatch for method={method}",
+        )
+
+
+def test_xarray_engine_invalid_engine(create_dataset):
+    pyramid = create_pyramid(create_dataset(), levels=2)
+    with pytest.raises(ValueError, match="engine must be"):
+        pyramid.write(zarr.storage.MemoryStore(), engine="bogus")
+
+
+def test_as_datatree_matches_native(create_dataset):
+    ds = create_dataset(nx=16, ny=16)
+    pyramid = create_pyramid(ds, levels=3)
+
+    native_store = zarr.storage.MemoryStore()
+    pyramid.write(native_store)
+
+    dt = pyramid.as_datatree()
+    assert set(dt.children) == {"0", "1", "2"}
+    assert "foo" not in dt.attrs  # root has multiscales attrs, not bogus
+
+    dt_store = zarr.storage.MemoryStore()
+    dt.to_zarr(dt_store, zarr_format=3, consolidated=False, encoding=pyramid.encoding)
+
+    native_dt = xr.open_datatree(native_store, engine="zarr", consolidated=False)
+    written_dt = xr.open_datatree(dt_store, engine="zarr", consolidated=False)
+    for lvl in ("0", "1", "2"):
+        np.testing.assert_allclose(
+            native_dt[lvl].ds.elevation.values,
+            written_dt[lvl].ds.elevation.values,
+            rtol=1e-5,
+        )
+
+
 def test_fused_hook_clamps_trailing_window():
     """A trailing region shorter than the stride yields a kernel window that
     falls outside the trimmed target; the hook must drop it, not crash."""

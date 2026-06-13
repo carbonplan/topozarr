@@ -44,9 +44,12 @@ def s3_zarr_store(moto_s3_server):
     boto3.client("s3", endpoint_url=endpoint_url, **_BOTO3_CREDS).create_bucket(
         Bucket=_TEST_BUCKET
     )
+    # allow_http is a client option; obstore 0.10's config getter panics on
+    # non-aws keys mixed into config
     obs = S3Store(
         _TEST_BUCKET,
-        config={"endpoint": endpoint_url, "allow_http": "true", **_OBSTORE_CREDS},
+        config={"endpoint": endpoint_url, **_OBSTORE_CREDS},
+        client_options={"allow_http": True},
     )
     return ObjectStore(obs)
 

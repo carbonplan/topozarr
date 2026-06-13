@@ -3,6 +3,7 @@ __pycache__/
 *.py[oc]
 build/
 dist/
+dist-core/
 wheels/
 *.egg-info
 
@@ -16,6 +17,7 @@ wheels/
 
 # notebooks
 .ipynb_checkpoints/
+*.ipynb
 
 # data files
 *.h5
