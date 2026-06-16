@@ -2,7 +2,7 @@
 
 ## Basic example
 
-Load a georeferenced dataset, create a pyramid plan, then write it:
+Load an Xarray dataset, create a pyramid, then write it:
 
 ```python
 import xarray as xr
@@ -20,53 +20,30 @@ pyramid = create_pyramid(
     method="mean",  # "mean" (default) | "max" | "min" | "sum"
 )
 
-# inspect chunk/shard encoding before writing
-print(pyramid.encoding)
-
 # compute and write all levels
 pyramid.write("pyramid.zarr")
 ```
 
 `levels` is the total number of resolution levels including the original. Level `0` is the original (highest) resolution; each subsequent level is coarsened by 2× per spatial dimension.
 
-`create_pyramid` returns a write plan. `pyramid.write(store)` does the work: level 0 is copied from the source dataset, then each level is block-reduced from the previously written one, streaming shard-sized regions through the Rust kernel on a thread pool. Reduction semantics match `xarray.coarsen(boundary="trim")` exactly, including NaN / `_FillValue` handling.
+To build a sparse or non-uniform pyramid, pass `factors` instead of `levels` — explicit cumulative downsample factors per level, e.g. `factors=[1, 4, 16]` for native, 4×, and 16×. The list must start at `1`, be strictly increasing, and have each entry integer-divide the next. `levels=N` is equivalent to `factors=[1, 2, ..., 2**(N-1)]`.
 
-!!! warning "Single-process write"
-    `write()` runs in the calling process on a local thread pool — it is not Dask-distributed-aware. A lazy/Dask-backed *source* is fine (reads are pulled into the writing process), but don't drive `write()` from distributed workers or run it concurrently against the same store: the `io="rust"` writer isn't serializable, and parallel writes to the same shard can corrupt output. For a Dask-distributed-compatible path, see [Dask distributed](#dask-distributed) below.
+```python
+pyramid = create_pyramid(ds, factors=[1, 4, 16])
+```
+
+
+
 
 ## Dask distributed
 
-The default `write()` path uses the topozarr-core Rust kernel and runs single-process. Two alternatives hand the work to xarray/Dask:
-
-**`engine="xarray"`** — coarsens with `xarray.coarsen` and writes each level via `Dataset.to_zarr`:
-
-```python
-pyramid.write("pyramid.zarr", engine="xarray")
-```
-
-Works with a Dask distributed cluster when the source dataset is Dask-backed. Sharding, `io`, `max_workers`, `keep_levels_in_memory`, `progress`, and `stats` options are not available on this path.
-
-**`pyramid.as_datatree()`** — returns a lazy `xr.DataTree` with all levels coarsened. Full control over the write is left to you:
+`write()` is **not** Dask — it streams regions through a local thread pool. For Dask-distributed writes, use `as_datatree()`, which returns a lazy `xr.DataTree` with all levels coarsened via `xarray.coarsen`. The recommended per-level chunking and sharding lives in `pyramid.encoding` (already shaped for `DataTree.to_zarr`) — don't forget to pass it!
 
 ```python
 dt = pyramid.as_datatree()
-# pyramid.encoding is already in the format DataTree.to_zarr expects
 dt.to_zarr("pyramid.zarr", zarr_format=3, consolidated=False,
            encoding=pyramid.encoding)
 ```
-
-With a Dask distributed cluster:
-
-```python
-from dask.distributed import Client
-
-with Client(...):
-    dt = pyramid.as_datatree()
-    dt.to_zarr("s3://bucket/pyramid.zarr", zarr_format=3,
-               consolidated=False, encoding=pyramid.encoding)
-```
-
-Use `as_datatree()` when you need fine-grained control: custom schedulers, icechunk sessions, or writing only specific levels.
 
 ## Progress and memory
 
@@ -76,13 +53,13 @@ Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written 
 pyramid.write("pyramid.zarr", progress=True)
 ```
 
-By default the thread pool size is derived from the CPU count and available RAM; peak memory is roughly `max_workers * 5 * region_bytes`. Pass an explicit `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 read regions on chunked sources. For bounded memory on large stores, open the source lazily (e.g. `xr.open_zarr(store, chunks=None)`) so regions are materialized one at a time. See [Design](design.md) for the full memory model.
+The threadpool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 read regions on chunked sources. For bounded memory on large stores, open the source lazily (e.g. `xr.open_zarr(store, chunks=None)`). See [Design](design.md#streaming-memory-model).
 
-By default each coarser level is re-read from the store and block-reduced. Pass `keep_levels_in_memory=True` to fuse the reduce into the write pass instead — each level is kept in RAM and the next level is produced without any store reads. `None` (default) enables this automatically when the higher levels fit in available RAM.
+Pass `keep_levels_in_memory=True` to keep levels in RAM and skip re-reading them from the store between levels ( may be faster, more memory). `None` (default) enables this automatically when subsequent levels fit in RAM.
 
 ## Visualization hints
 
-Embed colormap and color-range hints for [zarr-layer](https://zarr-layer.demo.carbonplan.org/) directly in the pyramid metadata:
+Optional. If you'll render the pyramid in [zarr-layer](https://zarr-layer.demo.carbonplan.org/), `layer_hints` embeds a default colormap and color range so it displays sensibly without manual setup. Skip it otherwise — it has no effect on the data.
 
 ```python
 from topozarr.metadata import ZarrLayerVarConfig
@@ -96,13 +73,13 @@ pyramid = create_pyramid(
 )
 ```
 
-These are written into the root `zarr-layer` metadata key. Omitting `layer_hints` has no effect on the pyramid structure or encoding.
+Written into the root `zarr-layer` metadata key; nothing else changes.
 
 ## Chunking
 
 `pyramid.encoding` holds the chunk and shard sizes per variable per level; `pyramid.write` applies them automatically.
 
-The heuristics target ~500 KB chunks for web visualization. Tune shard size with `chunks_per_shard` — the number of chunks per shard along each spatial dimension (default: `4`, giving 4×4 = 16 chunks per shard and ~8 MB shards). Valid values are powers of 2: `1, 2, 4, 8, 16, 32`. Shards are also the unit of work during pyramid generation, so larger shards mean fewer, bigger reads/writes and higher memory usage.
+The heuristics target ~500 KB chunks for web visualization. Tune shard size with `chunks_per_shard` — chunks per shard along each spatial dimension (default `4`). Valid values are powers of 2: `1, 2, 4, 8, 16, 32`. Larger shards mean fewer, bigger reads/writes and higher memory (shards are the unit of work — see [Design](design.md#chunk-and-shard-heuristics)).
 
 | `chunks_per_shard` | chunks/shard | approx shard size |
 |--------------------|:------------:|:-----------------:|
@@ -137,10 +114,7 @@ zarr.config.set({"async.concurrency": 128})
 pyramid.write(store, mode="w")
 ```
 
-If connect timeouts persist on large instances, lower the request fan-out:
-reduce `zarr.config.set({"async.concurrency": ...})` or pass a smaller
-`max_workers` to `pyramid.write` (total in-flight requests is roughly
-`max_workers * async.concurrency`).
+If connect timeouts persist on large instances, lower the request fan-out (total in-flight requests is roughly `max_workers * async.concurrency`): reduce `async.concurrency` or pass a smaller `max_workers`.
 
 ### Icechunk
 
@@ -156,29 +130,14 @@ pyramid.write(session.store, mode="w")
 session.commit("write pyramid")
 ```
 
-## Optional: zarrs codec pipeline
+## Experimental:  Rust write path
 
-Compression codec work can optionally be routed through the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline:
-
-```bash
-uv add zarrs
-```
-
-```python
-import zarr
-zarr.config.set({"codec_pipeline.path": "zarrs.ZarrsCodecPipeline"})
-```
-
-**Note:** zarrs is faster on local and NVMe storage but slower with object stores (S3, GCS) due to a connection-pooling issue ([zarrs-python#139](https://github.com/zarrs/zarrs-python/issues/139)). Use the default pipeline for cloud writes.
-
-## Experimental: native Rust write path
-
-By default pyramids are written through `zarr-python`. Passing `io="rust"` instead encodes and stores the spatial variables natively in the `topozarr-core` Rust kernel (via the bundled [zarrs](https://github.com/zarrs/zarrs) crate — no extra install), bypassing zarr-python's per-region sync bridge:
+Passing `io="rust"` writes through Rust using the Zarrs crate instead of `zarr-python` (no extra install):
 
 ```python
 pyramid.write("s3://bucket/pyramid.zarr", io="rust")
 ```
 
-It can be noticeably faster on object stores (~25% on S3 in our benchmarks) because encode and upload overlap on a shared connection pool. Metadata, coordinates, and non-spatial variables still go through zarr-python. Supports local paths, `s3://` URLs, `LocalStore`, and obstore-backed `ObjectStore` targets.
+Often faster on object stores (~25% on S3 in our benchmarks). Supports local paths, `s3://` URLs, `LocalStore`, and obstore-backed `ObjectStore` targets.
 
-**Experimental:** the API may change. This is unrelated to the zarrs codec pipeline above (a zarr-python codec backend); `io="rust"` is a separate write path. Leave `io="python"` (the default) for the stable path.
+**Experimental:** the API may change.
