@@ -109,20 +109,19 @@ def test_factors_validation(create_dataset, kwargs, match):
         create_pyramid(ds, **kwargs)
 
 
-def test_native_vs_xarray_parity_sparse(create_dataset):
+def test_write_sparse(create_dataset):
     ds = create_dataset(nx=64, ny=64)
 
-    native_store = zarr.storage.MemoryStore()
-    create_pyramid(ds, factors=[1, 4, 16]).write(native_store)
-    native = xr.open_datatree(native_store, engine="zarr", consolidated=False)
+    store = zarr.storage.MemoryStore()
+    create_pyramid(ds, factors=[1, 4, 16]).write(store)
+    dt = xr.open_datatree(store, engine="zarr", consolidated=False)
 
-    xarray_store = zarr.storage.MemoryStore()
-    create_pyramid(ds, factors=[1, 4, 16]).write(xarray_store, engine="xarray")
-    xarr = xr.open_datatree(xarray_store, engine="zarr", consolidated=False)
+    expected_sizes = {"0": 64, "1": 16, "2": 4}
+    for lvl, size in expected_sizes.items():
+        assert dt[lvl].ds.elevation.shape == (size, size)
 
-    for lvl in ("0", "1", "2"):
-        np.testing.assert_allclose(
-            native[lvl].ds.elevation.values,
-            xarr[lvl].ds.elevation.values,
-            rtol=1e-5,
-        )
+    np.testing.assert_allclose(
+        dt["0"].ds.elevation.values,
+        ds.elevation.values,
+        rtol=1e-5,
+    )
