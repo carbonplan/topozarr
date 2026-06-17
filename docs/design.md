@@ -1,26 +1,39 @@
 # Design
 
-How topozarr turns a georeferenced dataset into a multiscale Zarr store, and
+How topozarr turns an Xarray Dataset into a multiscale Zarr store, and
 which knobs control memory and performance.
 
 ## Plan / execute split
 
 [`create_pyramid`][topozarr.coarsen.create_pyramid] is pure planning — no data
-is read or computed. It produces a [`Pyramid`][topozarr.pyramid.Pyramid]
+ written. It produces a [`Pyramid`][topozarr.pyramid.Pyramid]
 holding:
 
-- **level templates**: per-level `xr.Dataset`s with real (mean-coarsened)
-  coordinates but zero-cost placeholder data variables,
+- **Datatree**: per-level `xr.Dataset`s with real (mean-coarsened)
+  coordinates.
 - **encoding**: chunk and shard sizes per variable per level,
 - **attrs**: root metadata following the zarr-conventions
   [multiscales](https://github.com/zarr-conventions/multiscales),
   [proj](https://github.com/zarr-conventions/geo-proj), and
   [spatial](https://github.com/zarr-conventions/spatial) specs.
 
-`Pyramid.write` executes the plan: level 0 is streamed from the source
-dataset, then each level `N` is block-reduced from the already-written level
-`N - 1` through the Rust kernel (`topozarr_core.block_reduce`), so the source
-is read exactly once regardless of the number of levels.
+The level structure comes from either `levels` (dense `[1, 2, 4, ...]` factors)
+or `factors` (explicit cumulative downsample factors, e.g. `[1, 4, 16]` for a
+sparse pyramid). Either way the plan is the same shape.
+
+There are three ways to materialize the plan:
+
+- **`Pyramid.write`** (default): level 0 is streamed from the source dataset,
+  then each level `N` is block-reduced from the already-written level `N - 1`
+  through the Rust kernel (`topozarr_core.block_reduce`), so the source is read
+  exactly once regardless of the number of levels. Work runs on a local thread
+  pool (not Dask). The rest of this document describes this path.
+- **`Pyramid.write(..., io="rust")`**: same streaming model, but spatial-variable
+  regions are encoded and stored natively in the Rust kernel instead of through
+  zarr-python — often faster on object stores.
+- **`Pyramid.as_datatree`**: returns a lazy `xr.DataTree` (levels coarsened via
+  `xarray.coarsen`) for Dask-distributed writes. You call `to_zarr` yourself,
+  passing `pyramid.encoding`.
 
 ## Chunk and shard heuristics
 
@@ -78,8 +91,11 @@ variables within a level stream through one shared pool.
 
 | Knob | Where | Effect |
 |------|-------|--------|
+| `levels` / `factors` | `create_pyramid` | number of levels, or explicit cumulative downsample factors (sparse pyramids) |
 | `target_chunk_bytes` | `create_pyramid` | chunk size on disk |
 | `chunks_per_shard` | `create_pyramid` | shard size = work unit; `None` disables sharding |
 | `max_region_bytes` | `Pyramid.write` | cap on level-0 region widening |
 | `max_workers` | `Pyramid.write` | thread pool size; `None` = RAM/CPU-derived |
+| `keep_levels_in_memory` | `Pyramid.write` | keep written levels in RAM to skip re-reads; `None` = auto when they fit |
+| `io` | `Pyramid.write` | `"python"` (default) or `"rust"` native write path |
 | `progress` | `Pyramid.write` | tqdm bar over written regions |

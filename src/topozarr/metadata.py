@@ -169,6 +169,7 @@ def create_multiscale_metadata(
     level_datasets: dict[int, xr.Dataset],
     crs: str,
     method: str,
+    factors: list[int],
     layer_hints: dict[str, ZarrLayerVarConfig] | None = None,
 ) -> dict[str, Any]:
     spatial_dims = {x_dim, y_dim}
@@ -176,15 +177,25 @@ def create_multiscale_metadata(
     root_transform = _get_affine_transform(ds, x_dim, y_dim)
 
     def get_multiscales_transform(level: int) -> dict[str, Any]:
-        # scale is relative to derived_from (always 2.0 per coarsening step, not cumulative)
-        s = [2.0 if (level > 0 and d in spatial_dims) else 1.0 for d in ds.dims]
-        t = [0.5 if (level > 0 and d in spatial_dims) else 0.0 for d in ds.dims]
+        # scale is relative to derived_from: the per-step ratio, not cumulative.
+        # translation is the pixel-registration half-cell shift ((step-1)/2;
+        # step=2 -> 0.5).
+        step = factors[level] // factors[level - 1]
+        s = [float(step) if (level > 0 and d in spatial_dims) else 1.0 for d in ds.dims]
+        t = [
+            (step - 1) / 2 if (level > 0 and d in spatial_dims) else 0.0
+            for d in ds.dims
+        ]
         return {"scale": s, "translation": t}
 
     def get_level_spatial_attrs(level: int) -> dict[str, Any]:
         level_ds = level_datasets[level]
-        # length-1 dims at deep levels fall back to level-0 resolution * 2^level
-        fallback = (root_transform[0] * 2**level, root_transform[4] * 2**level)
+        # real coords drive the transform for multi-element dims; length-1 dims
+        # fall back to level-0 resolution * cumulative factor for this level
+        fallback = (
+            root_transform[0] * factors[level],
+            root_transform[4] * factors[level],
+        )
         level_transform = _get_affine_transform(
             level_ds, x_dim, y_dim, fallback_res=fallback
         )

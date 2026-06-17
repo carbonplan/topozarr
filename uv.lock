@@ -2449,7 +2449,7 @@ wheels = [
 
 [[package]]
 name = "topozarr"
-version = "0.0.93"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
@@ -2569,7 +2569,7 @@ test = [
 
 [[package]]
 name = "topozarr-core"
-version = "0.1.0"
+version = "0.1.1"
 source = { editable = "core" }
 dependencies = [
     { name = "numpy" },

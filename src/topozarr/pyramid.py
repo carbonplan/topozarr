@@ -107,11 +107,16 @@ class Pyramid:
     x_dim: str
     y_dim: str
     method: CoarseningMethod
+    factors: list[int] = field(default_factory=list)
     fill_values: dict[str, float | int | None] = field(default_factory=dict)
 
     @property
     def levels(self) -> int:
         return len(self.level_templates)
+
+    def _step(self, lvl: int) -> int:
+        """Per-step downsample ratio coarsening level ``lvl-1`` into ``lvl``."""
+        return self.factors[lvl] // self.factors[lvl - 1]
 
     def _spatial_vars(self) -> list[str]:
         return [
@@ -143,8 +148,10 @@ class Pyramid:
         region = self._region_shape(lvl, name, max_region_bytes)
         nbytes = math.prod(region) * template_da.dtype.itemsize
         if lvl > 0:
-            # the input block is the output region scaled by the 2x2 stride
-            nbytes *= 4
+            # the input block is the output region scaled by the per-step stride
+            # along each spatial axis (step*step for a 2-D coarsening window)
+            step = self._step(lvl)
+            nbytes *= step * step
         return nbytes
 
     def _region_count(self, lvl: int, name: str, max_region_bytes: int) -> int:
@@ -211,7 +218,6 @@ class Pyramid:
         stats: bool = False,
         keep_levels_in_memory: bool | None = None,
         io: Literal["python", "rust"] = "python",
-        engine: Literal["native", "xarray"] = "native",
     ) -> dict[str, Any] | None:
         """Compute and write pyramid levels to a Zarr store.
 
@@ -264,18 +270,6 @@ class Pyramid:
                 local paths, ``s3://`` URLs, ``LocalStore``, and obstore-backed
                 ``ObjectStore`` targets. This is unrelated to the optional
                 ``zarrs`` codec pipeline (a separate zarr-python codec backend).
-            engine: ``"native"`` (default) uses the topozarr-core Rust kernel
-                for coarsening — fast on a single machine but incompatible with
-                Dask distributed. ``"xarray"`` delegates coarsening to
-                ``xarray.DataArray.coarsen`` and writes each level with
-                ``Dataset.to_zarr``; this path is Dask-distributed-compatible
-                when the source dataset is backed by Dask arrays. When
-                ``engine="xarray"``, the ``io``, ``max_workers``,
-                ``keep_levels_in_memory``, ``progress``, and ``stats`` kwargs
-                are ignored. For full control over the write (custom scheduler,
-                icechunk, etc.) use
-                [as_datatree][topozarr.pyramid.Pyramid.as_datatree] instead.
-
         Examples:
             Write all levels to a local store:
 
@@ -289,11 +283,6 @@ class Pyramid:
             pyramid.write("pyramid.zarr", mode="a", levels=[1, 2])
             ```
         """
-        if engine not in ("native", "xarray"):
-            raise ValueError(f"engine must be 'native' or 'xarray', got {engine!r}")
-        if engine == "xarray":
-            return self._write_xarray(store, mode=mode, levels=levels)
-
         if levels is not None:
             invalid = sorted(set(levels) - set(self.level_templates))
             if invalid:
@@ -367,13 +356,20 @@ class Pyramid:
                     and (lvl + 1) in self.level_templates
                     and (lvl + 1) in write_levels_set
                 ):
+                    step = self._step(lvl + 1)
                     for name in spatial_vars:
                         if lvl > 0 and name not in mem_levels:
                             continue  # no memory source; skip fusion for this var
                         dims = self.level_templates[lvl][name].dims
                         region_shape = self._region_shape(lvl, name, max_region_bytes)
+                        # guard checks region shape; the fused hook (s.start // f)
+                        # also needs region starts divisible by step -- safe today
+                        # because level>0 regions are shard-sized with shape-multiple
+                        # starts. If unaligned, fusion is skipped here and it falls
+                        # back to the read-from-prev-level downsample_level path
+                        # (correct for any stride).
                         spatial_ok = all(
-                            region_shape[i] % 2 == 0
+                            region_shape[i] % step == 0
                             for i, d in enumerate(dims)
                             if d in (self.x_dim, self.y_dim)
                         )
@@ -382,7 +378,7 @@ class Pyramid:
                         next_da = self.level_templates[lvl + 1][name]
                         next_mem[name] = np.empty(next_da.shape, next_da.dtype)
                         next_stride[name] = tuple(
-                            2 if d in (self.x_dim, self.y_dim) else 1 for d in dims
+                            step if d in (self.x_dim, self.y_dim) else 1 for d in dims
                         )
 
                 with ThreadPoolExecutor(workers) as ex:
@@ -501,8 +497,9 @@ class Pyramid:
                 write_region=write_region,
             )
 
+        step = self._step(lvl)
         stride = tuple(
-            2 if d in (self.x_dim, self.y_dim) else 1 for d in template_da.dims
+            step if d in (self.x_dim, self.y_dim) else 1 for d in template_da.dims
         )
         return downsample_level(
             root[f"{lvl - 1}/{name}"],
@@ -516,65 +513,31 @@ class Pyramid:
             write_region=write_region,
         )
 
-    def _write_xarray(
-        self,
-        store: Any,
-        *,
-        mode: str = "w",
-        levels: list[int] | None = None,
-    ) -> None:
-        """Coarsen and write pyramid levels using xarray.coarsen (Dask-compatible).
+    def _coarsen_chain(self) -> list[xr.Dataset]:
+        """Lazily-chained coarsened datasets, one per level (xarray.coarsen).
 
-        Each level is produced by chaining 2x coarsen operations on the source
-        dataset, then written via Dataset.to_zarr. Sharding is not applied.
+        Each level coarsens the previous one by the per-step ratio
+        ``factors[i] // factors[i-1]`` along both spatial dims.
         """
-        write_levels = list(range(self.levels)) if levels is None else list(levels)
-        if levels is not None:
-            invalid = sorted(set(write_levels) - set(self.level_templates))
-            if invalid:
-                raise ValueError(
-                    f"invalid levels {invalid}; pyramid has levels 0-{self.levels - 1}"
-                )
-
-        root = zarr.open_group(store, mode=mode, zarr_format=3)
-        root.attrs.update(self.attrs)
-
-        # Build lazily-chained coarsened datasets; level 0 = source,
-        # level N = coarsen(level N-1, boundary="trim")
         ds_chain: list[xr.Dataset] = [self.source]
-        for _ in range(self.levels - 1):
+        for lvl in range(1, self.levels):
+            step = self._step(lvl)
             prev = ds_chain[-1]
             coarsened = getattr(
-                prev.coarsen({self.x_dim: 2, self.y_dim: 2}, boundary="trim"),
+                prev.coarsen({self.x_dim: step, self.y_dim: step}, boundary="trim"),
                 self.method,
             )()
             ds_chain.append(coarsened)
-
-        for lvl in write_levels:
-            ds_lvl = ds_chain[lvl]
-            enc_lvl = self.encoding[f"/{lvl}"]
-            zarr_enc = {
-                name: enc_lvl[name] for name in ds_lvl.data_vars if name in enc_lvl
-            }
-            ds_lvl.to_zarr(
-                store,
-                group=str(lvl),
-                mode="a",
-                zarr_format=3,
-                consolidated=False,
-                encoding=zarr_enc if zarr_enc else None,
-            )
+        return ds_chain
 
     def as_datatree(self) -> xr.DataTree:
         """Return a lazy DataTree with all pyramid levels coarsened via xarray.
 
-        Each level is produced by chaining 2x ``xarray.coarsen`` operations on
-        the source dataset. If the source is Dask-backed, the returned tree is
-        fully lazy and can be written with ``DataTree.to_zarr`` on a Dask
-        distributed cluster.
-
-        ``self.encoding`` is already in the format expected by
-        ``DataTree.to_zarr``'s ``encoding`` kwarg:
+        Each level is produced by chaining ``xarray.coarsen`` operations on the
+        source dataset. If the source is Dask-backed, the returned tree is fully
+        lazy — suitable for writing on a Dask distributed cluster or with
+        icechunk. Use ``self.encoding`` (already shaped for ``DataTree.to_zarr``)
+        to apply the recommended chunks and shards:
 
         ```python
         dt = pyramid.as_datatree()
@@ -582,14 +545,7 @@ class Pyramid:
                    encoding=pyramid.encoding)
         ```
         """
-        ds_chain: list[xr.Dataset] = [self.source]
-        for _ in range(self.levels - 1):
-            prev = ds_chain[-1]
-            coarsened = getattr(
-                prev.coarsen({self.x_dim: 2, self.y_dim: 2}, boundary="trim"),
-                self.method,
-            )()
-            ds_chain.append(coarsened)
+        ds_chain = self._coarsen_chain()
 
         root_ds = xr.Dataset(attrs=self.attrs)
         children = {str(lvl): xr.DataTree(ds_chain[lvl]) for lvl in range(self.levels)}

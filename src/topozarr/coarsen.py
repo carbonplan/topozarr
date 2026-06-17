@@ -35,8 +35,9 @@ def _coarsen_coord(values: np.ndarray, factor: int) -> np.ndarray:
     return values[: n * window].reshape(n, window).mean(axis=1)
 
 
-def _coarsen_template(ds: xr.Dataset, x_dim: str, y_dim: str) -> xr.Dataset:
-    """Halve the spatial dims of ``ds``: real coarsened coords, placeholder data.
+def _coarsen_template(ds: xr.Dataset, x_dim: str, y_dim: str, step: int) -> xr.Dataset:
+    """Coarsen the spatial dims of ``ds`` by ``step``: real coarsened coords,
+    placeholder data.
 
     Spatial data variables become zero-cost broadcast arrays of the right
     shape/dtype (filled in by ``Pyramid.write``); non-spatial variables and
@@ -48,7 +49,7 @@ def _coarsen_template(ds: xr.Dataset, x_dim: str, y_dim: str) -> xr.Dataset:
     for name, coord in ds.coords.items():
         if coord.ndim == 1 and coord.dims[0] in spatial_dims:
             coords[name] = xr.DataArray(
-                _coarsen_coord(coord.values, 2), dims=coord.dims, attrs=coord.attrs
+                _coarsen_coord(coord.values, step), dims=coord.dims, attrs=coord.attrs
             )
         else:
             coords[name] = coord
@@ -57,7 +58,7 @@ def _coarsen_template(ds: xr.Dataset, x_dim: str, y_dim: str) -> xr.Dataset:
     for name, da in ds.data_vars.items():
         if spatial_dims <= set(da.dims):
             shape = tuple(
-                s // 2 if d in spatial_dims else s for d, s in zip(da.dims, da.shape)
+                s // step if d in spatial_dims else s for d, s in zip(da.dims, da.shape)
             )
             placeholder = np.broadcast_to(np.zeros(1, dtype=da.dtype), shape)
             data_vars[name] = xr.DataArray(placeholder, dims=da.dims, attrs=da.attrs)
@@ -87,28 +88,68 @@ def _spatial_source_chunks(
 
 def build_level_templates(
     ds: xr.Dataset,
-    num_levels: int,
+    factors: list[int],
     x_dim: str,
     y_dim: str,
 ) -> dict[int, xr.Dataset]:
+    # mean/max/min/sum are composable, so each level coarsens from the prior
+    # (coarser) level by the per-step ratio. NOTE: median/mode are NOT
+    # composable -- when added, sparse levels must reduce from native instead.
     levels = [ds]
-    for lvl in range(num_levels - 1):
+    for prev_factor, factor in zip(factors[:-1], factors[1:]):
+        step = factor // prev_factor
         curr = levels[-1]
-        if curr.sizes[x_dim] < 2 or curr.sizes[y_dim] < 2:
+        if curr.sizes[x_dim] < step or curr.sizes[y_dim] < step:
             raise ValueError(
-                f"cannot coarsen to {num_levels} levels: after {lvl} step(s) "
-                f"dimensions are {x_dim}={curr.sizes[x_dim]}, {y_dim}={curr.sizes[y_dim]}; "
-                "both must be >= 2 to coarsen further"
+                f"cannot coarsen by step {step} (cumulative factor {factor}): "
+                f"dimensions are {x_dim}={curr.sizes[x_dim]}, "
+                f"{y_dim}={curr.sizes[y_dim]}; both must be >= {step} to coarsen further"
             )
-        levels.append(_coarsen_template(curr, x_dim, y_dim))
+        levels.append(_coarsen_template(curr, x_dim, y_dim, step))
 
     # zarr-multiscales: level 0 = highest resolution
     return dict(enumerate(levels))
 
 
+def _resolve_factors(levels: int | None, factors: list[int] | None) -> list[int]:
+    """Validate the levels/factors inputs and return cumulative downsample factors.
+
+    Exactly one of ``levels`` / ``factors`` must be given. ``levels=N`` maps to
+    powers of two ``[1, 2, 4, ..., 2**(N-1)]``. An explicit ``factors`` list must
+    start at 1, be strictly increasing, and have each entry integer-divide the
+    next (whole per-step ratios).
+    """
+    if (levels is None) == (factors is None):
+        raise ValueError("pass exactly one of 'levels' or 'factors'")
+
+    if levels is not None:
+        if not isinstance(levels, int) or levels < 1:
+            raise ValueError(f"levels must be a positive int, got {levels!r}")
+        return [2**i for i in range(levels)]
+
+    assert factors is not None
+    if not factors:
+        raise ValueError("factors must be a non-empty list")
+    if any(not isinstance(f, int) or isinstance(f, bool) or f < 1 for f in factors):
+        raise ValueError(f"factors must be positive ints, got {factors!r}")
+    if factors[0] != 1:
+        raise ValueError(f"factors must start at 1, got {factors!r}")
+    for prev, curr in zip(factors[:-1], factors[1:]):
+        if curr <= prev:
+            raise ValueError(f"factors must be strictly increasing, got {factors!r}")
+        if curr % prev != 0:
+            raise ValueError(
+                f"each factor must be an integer multiple of the previous one, "
+                f"got {factors!r} ({curr} not divisible by {prev})"
+            )
+    return list(factors)
+
+
 def create_pyramid(
     ds: xr.Dataset,
-    levels: int,
+    levels: int | None = None,
+    *,
+    factors: list[int] | None = None,
     x_dim: str = "x",
     y_dim: str = "y",
     method: CoarseningMethod = "mean",
@@ -118,11 +159,18 @@ def create_pyramid(
 ) -> Pyramid:
     """Build a multiscale Zarr pyramid plan from a georeferenced Dataset.
 
+    Exactly one of ``levels`` / ``factors`` must be given.
+
     Args:
         ds: Source dataset. Must have a CRS assigned via ``ds.proj.assign_crs``.
         levels: Total number of resolution levels, including the original.
             Level ``0`` is the original resolution; each subsequent level
-            coarsens by 2× per spatial dimension.
+            coarsens by 2× per spatial dimension (cumulative factors
+            ``[1, 2, 4, ...]``).
+        factors: Explicit cumulative downsample factors per level, e.g.
+            ``[1, 4, 16]`` for a sparse 4×-spaced pyramid. Must start at 1, be
+            strictly increasing, and have each entry integer-divide the next.
+            Mutually exclusive with ``levels``.
         x_dim: Name of the x (longitude / easting) dimension.
         y_dim: Name of the y (latitude / northing) dimension.
         method: Spatial aggregation method for coarsening.
@@ -153,19 +201,24 @@ def create_pyramid(
 
         pyramid = create_pyramid(ds, levels=2, x_dim="lon", y_dim="lat")
         pyramid.write("pyramid.zarr")
+
+        # sparse pyramid: native, 4x, 16x (skips the costly 2x level)
+        sparse = create_pyramid(ds, factors=[1, 4, 16], x_dim="lon", y_dim="lat")
+        sparse.write("sparse.zarr")
         ```
     """
+    factors = _resolve_factors(levels, factors)
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
     for name, da in ds.data_vars.items():
         if x_dim in da.dims and y_dim in da.dims and da.ndim > 4:
             raise ValueError(
                 f"spatial variable {name!r} has {da.ndim} dimensions; "
-                "the native engine (topozarr-core) supports at most 4 "
-                "(use engine='xarray' in pyramid.write() to lift this limit)"
+                "topozarr-core supports at most 4 "
+                "(use pyramid.as_datatree() for the xarray/Dask path, which lifts this limit)"
             )
     crs_str = get_crs(ds)
-    level_templates = build_level_templates(ds, levels, x_dim, y_dim)
+    level_templates = build_level_templates(ds, factors, x_dim, y_dim)
 
     level0_source_chunks = _spatial_source_chunks(ds, x_dim, y_dim)
     full_encoding = {
@@ -187,6 +240,7 @@ def create_pyramid(
         level_datasets=level_templates,
         crs=crs_str,
         method=str(method),
+        factors=factors,
         layer_hints=layer_hints,
     )
 
@@ -211,5 +265,6 @@ def create_pyramid(
         x_dim=x_dim,
         y_dim=y_dim,
         method=method,
+        factors=factors,
         fill_values=fill_values,
     )
