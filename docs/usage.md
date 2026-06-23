@@ -32,6 +32,8 @@ To build a sparse or non-uniform pyramid, pass `factors` instead of `levels` —
 pyramid = create_pyramid(ds, factors=[1, 4, 16])
 ```
 
+Levels are always named sequentially (`0, 1, 2, …`) regardless of `factors`; the downsample factor isn't in the node name but in the multiscales metadata (`layout[i].transform.scale` and each level's `spatial:transform`).
+
 
 
 
