@@ -37,6 +37,23 @@ Levels are always named sequentially (`0, 1, 2, …`) regardless of `factors`; t
 
 
 
+## Metadata only (no pyramid)
+
+Low-resolution datasets don't need a pyramid. `attach_geozarr_metadata` returns
+the dataset with the geozarr convention attrs (`proj:*`, `spatial:*`,
+`zarr_conventions`) attached — no coarsening, no `/0` nesting, no `multiscales`
+attr. Write it as a flat zarr group yourself:
+
+```python
+from topozarr import attach_geozarr_metadata
+
+ds = attach_geozarr_metadata(ds, x_dim="lon", y_dim="lat")
+ds.to_zarr("flat.zarr", zarr_format=3, consolidated=False)
+```
+
+CRS is read from the dataset (xproj) or passed explicitly via `crs="EPSG:4326"`.
+Visualization hints work the same as `create_pyramid` via `layer_hints`.
+
 ## Dask distributed
 
 `write()` is **not** Dask — it streams regions through a local thread pool. For Dask-distributed writes, use `as_datatree()`, which returns a lazy `xr.DataTree` with all levels coarsened via `xarray.coarsen`. The recommended per-level chunking and sharding lives in `pyramid.encoding` (already shaped for `DataTree.to_zarr`) — don't forget to pass it!
