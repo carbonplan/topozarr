@@ -44,6 +44,8 @@ macro_rules! impl_element_int {
         impl Element for $t {
             const ZERO: Self = 0;
             fn to_f64(self) -> f64 { self as f64 }
+            // `as` truncates toward zero, so integer `mean` floors the window
+            // average instead of promoting to float like xarray.coarsen
             fn from_f64(v: f64) -> Self { v as $t }
             fn is_nan(self) -> bool { false }
             fn nan() -> Option<Self> { None }

@@ -86,6 +86,8 @@ variables within a level stream through one shared pool.
 - `skipna=True` skips NaN and `_FillValue` elements; an all-missing window
   produces 0 for `sum` (matching `nansum`) and the fill value (or NaN) for
   `mean`/`max`/`min`
+- integer dtypes stay integer: `mean` truncates toward zero (unlike
+  `xarray.coarsen`, which promotes to float)
 
 ## Tuning knobs
 

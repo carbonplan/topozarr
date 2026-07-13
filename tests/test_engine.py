@@ -5,8 +5,9 @@ import pytest
 import xarray as xr
 import zarr
 from topozarr_core import block_reduce
-from topozarr.engine import copy_array, copy_region_shape, downsample_level
+
 from topozarr.coarsen import create_pyramid
+from topozarr.engine import copy_array, copy_region_shape, downsample_level
 
 METHODS = ["mean", "max", "min", "sum"]
 

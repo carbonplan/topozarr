@@ -1,6 +1,7 @@
 import pytest
 import xarray as xr
 import zarr
+
 from topozarr.coarsen import create_pyramid
 
 

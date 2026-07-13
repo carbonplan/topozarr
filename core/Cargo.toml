@@ -23,5 +23,8 @@ zarrs_object_store = "0.6"
 object_store = { version = "0.13", features = ["aws"] }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+
 [profile.release]
 lto = true

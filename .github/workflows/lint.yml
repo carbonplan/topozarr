@@ -29,3 +29,6 @@ jobs:
 
       - name: Run pre-commit
         run: uv run pre-commit run --all-files
+
+      - name: Type check
+        run: uv run ty check src/

@@ -91,18 +91,22 @@ impl PutQueue {
         self.pending.lock().unwrap().push(handle);
     }
 
-    /// Await every outstanding PUT, propagating the first error.
+    /// Await every outstanding PUT, returning the first error. All handles
+    /// are drained even after a failure so no upload outlives `flush`.
     fn flush(&self) -> Result<(), String> {
         let handles: Vec<_> = self.pending.lock().unwrap().drain(..).collect();
         self.rt.block_on(async {
+            let mut first_err: Option<String> = None;
             for h in handles {
-                match h.await {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => return Err(e),
-                    Err(_) => return Err("put task panicked".to_string()),
+                let r = match h.await {
+                    Ok(r) => r,
+                    Err(_) => Err("put task panicked".to_string()),
+                };
+                if let Err(e) = r {
+                    first_err.get_or_insert(e);
                 }
             }
-            Ok(())
+            first_err.map_or(Ok(()), Err)
         })
     }
 }
@@ -466,5 +470,81 @@ impl RustWriter {
             py.detach(|| q.flush()).map_err(PyRuntimeError::new_err)?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::AtomicUsize;
+    use std::time::Duration;
+
+    fn queue(rt: &tokio::runtime::Runtime) -> PutQueue {
+        PutQueue {
+            async_store: Arc::new(AsyncObjectStore::new(object_store::memory::InMemory::new())),
+            rt: rt.handle().clone(),
+            sem: Arc::new(tokio::sync::Semaphore::new(MAX_INFLIGHT_PUTS)),
+            pending: Mutex::new(Vec::new()),
+            stats: Arc::new(IoStats::default()),
+        }
+    }
+
+    fn runtime() -> tokio::runtime::Runtime {
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn flush_drains_all_handles_past_first_error() {
+        let rt = runtime();
+        let q = queue(&rt);
+        let done = Arc::new(AtomicUsize::new(0));
+        {
+            let mut pending = q.pending.lock().unwrap();
+            pending.push(rt.spawn(async { Err("boom".to_string()) }));
+            pending.push(rt.spawn(async {
+                panic!("put task panic");
+                #[allow(unreachable_code)]
+                Ok(())
+            }));
+            for _ in 0..3 {
+                let done = done.clone();
+                pending.push(rt.spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    done.fetch_add(1, Ordering::Relaxed);
+                    Ok(())
+                }));
+            }
+        }
+        assert_eq!(q.flush(), Err("boom".to_string()));
+        // the slow successes finished before flush returned, so every handle
+        // was awaited (an early return on "boom" would leave done at 0)
+        assert_eq!(done.load(Ordering::Relaxed), 3);
+        assert!(q.pending.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn flush_reports_panicked_put() {
+        let rt = runtime();
+        let q = queue(&rt);
+        q.pending.lock().unwrap().push(rt.spawn(async {
+            panic!("put task panic");
+            #[allow(unreachable_code)]
+            Ok(())
+        }));
+        assert_eq!(q.flush(), Err("put task panicked".to_string()));
+    }
+
+    #[test]
+    fn spawn_set_uploads_and_flush_succeeds() {
+        let rt = runtime();
+        let q = queue(&rt);
+        q.spawn_set(StoreKey::new("a/b").unwrap(), Bytes::from_static(b"xyz"), 3);
+        q.spawn_set(StoreKey::new("a/c").unwrap(), Bytes::from_static(b"12"), 2);
+        assert_eq!(q.flush(), Ok(()));
+        assert_eq!(q.stats.put_ops.load(Ordering::Relaxed), 2);
+        assert_eq!(q.stats.put_bytes.load(Ordering::Relaxed), 5);
     }
 }

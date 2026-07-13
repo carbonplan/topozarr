@@ -5,12 +5,13 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from time import perf_counter
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 import psutil
 import xarray as xr
 import zarr
+import zarr.errors
 from topozarr_core import block_reduce
 
 from .engine import (
@@ -65,7 +66,11 @@ def _progress_bar(total: int) -> Any:
 
 
 def source_chunks(da: xr.DataArray) -> tuple[int, ...] | None:
-    """Per-axis chunk shape of the source backing ``da``, if chunked."""
+    """Per-axis chunk shape of the source backing ``da``, if chunked.
+
+    Uses the first chunk per axis; irregular dask chunking only degrades the
+    region-widening heuristic (extra reads), never correctness.
+    """
     if da.chunks is not None:  # dask
         return tuple(c[0] for c in da.chunks)
     enc = da.encoding.get("chunks")  # zarr/icechunk backend
@@ -120,7 +125,7 @@ class Pyramid:
 
     def _spatial_vars(self) -> list[str]:
         return [
-            name
+            str(name)
             for name, da in self.source.data_vars.items()
             if self.x_dim in da.dims and self.y_dim in da.dims
         ]
@@ -210,7 +215,7 @@ class Pyramid:
         self,
         store: Any,
         *,
-        mode: str = "w",
+        mode: Literal["w", "w-", "a"] = "w",
         max_workers: int | None = None,
         levels: list[int] | None = None,
         max_region_bytes: int = DEFAULT_MAX_REGION_BYTES,
@@ -234,12 +239,16 @@ class Pyramid:
                 ``ObjectStore``, or icechunk session store.
             mode: Zarr open mode for the root group. Use ``"a"`` when
                 writing a subset of levels so the root group and any
-                pre-existing levels are preserved.
+                pre-existing levels are preserved; ``"w"`` with a levels
+                subset raises if the store already holds data (truncation
+                would delete the levels not being rewritten).
             max_workers: Thread pool size for region processing. ``None``
                 derives a default from the CPU count and available memory
                 (peak memory is roughly ``max_workers * 5 * region_bytes``).
             levels: Subset of levels to write (e.g. ``[1, 2]``).
-                Defaults to all levels.
+                Defaults to all levels. Each coarsened level reads its
+                predecessor, so level ``N > 0`` must have level ``N - 1``
+                either in the subset or already present in the store.
             max_region_bytes: Memory budget per level-0 copy region. Regions
                 are widened to cover whole source chunks when that fits the
                 budget, so each source chunk is read once.
@@ -290,11 +299,28 @@ class Pyramid:
                     f"invalid levels {invalid}; pyramid has levels 0-{self.levels - 1}"
                 )
 
-        write_levels = list(range(self.levels)) if levels is None else list(levels)
+        write_levels = (
+            list(range(self.levels)) if levels is None else sorted(set(levels))
+        )
         spatial_vars = self._spatial_vars()
 
         if io not in ("python", "rust"):
             raise ValueError(f"io must be 'python' or 'rust', got {io!r}")
+
+        if mode == "w" and set(write_levels) != set(self.level_templates):
+            # mode="w" truncates the store, so a partial write over existing
+            # data would silently delete the levels not being rewritten
+            try:
+                zarr.open_group(store, mode="r", zarr_format=3)
+                has_root = True
+            except (FileNotFoundError, zarr.errors.GroupNotFoundError):
+                has_root = False
+            if has_root:
+                raise ValueError(
+                    f"levels={write_levels} with mode='w' would truncate the "
+                    "store, deleting the levels not being rewritten; pass "
+                    "mode='a' to preserve them"
+                )
 
         pbar = None
         on_region: Callable[[], None] | None = None
@@ -314,6 +340,17 @@ class Pyramid:
         mem_levels: dict[str, np.ndarray] = {}
 
         root = zarr.open_group(store, mode=mode, zarr_format=3)
+        for lvl in write_levels:
+            if lvl == 0 or (lvl - 1) in write_levels_set:
+                continue
+            missing = [n for n in spatial_vars if f"{lvl - 1}/{n}" not in root]
+            if missing:
+                raise ValueError(
+                    f"level {lvl} is coarsened from level {lvl - 1}, which is "
+                    f"neither in the write plan nor in the store (missing "
+                    f"arrays: {missing}); include level {lvl - 1} in 'levels' "
+                    "or write it first"
+                )
         root.attrs.update(self.attrs)
 
         rust_writer = None
@@ -334,7 +371,7 @@ class Pyramid:
                 )
                 if not spatial_vars:
                     continue
-                level_group = root[str(lvl)]
+                level_group = cast(zarr.Group, root[str(lvl)])
 
                 workers = max_workers
                 if workers is None:
@@ -345,41 +382,14 @@ class Pyramid:
                         )
                     )
 
-                # Pre-allocate next-level buffers for variables eligible for fusion.
-                # Eligibility: fusion enabled AND next level exists in the write plan
-                # AND this variable is sourced from memory (or we're at level 0)
-                # AND each spatial axis of the region shape is even (alignment guard).
-                next_mem: dict[str, np.ndarray] = {}
-                next_stride: dict[str, tuple[int, ...]] = {}
-                if (
-                    use_fusion
-                    and (lvl + 1) in self.level_templates
-                    and (lvl + 1) in write_levels_set
-                ):
-                    step = self._step(lvl + 1)
-                    for name in spatial_vars:
-                        if lvl > 0 and name not in mem_levels:
-                            continue  # no memory source; skip fusion for this var
-                        dims = self.level_templates[lvl][name].dims
-                        region_shape = self._region_shape(lvl, name, max_region_bytes)
-                        # guard checks region shape; the fused hook (s.start // f)
-                        # also needs region starts divisible by step -- safe today
-                        # because level>0 regions are shard-sized with shape-multiple
-                        # starts. If unaligned, fusion is skipped here and it falls
-                        # back to the read-from-prev-level downsample_level path
-                        # (correct for any stride).
-                        spatial_ok = all(
-                            region_shape[i] % step == 0
-                            for i, d in enumerate(dims)
-                            if d in (self.x_dim, self.y_dim)
-                        )
-                        if not spatial_ok:
-                            continue
-                        next_da = self.level_templates[lvl + 1][name]
-                        next_mem[name] = np.empty(next_da.shape, next_da.dtype)
-                        next_stride[name] = tuple(
-                            step if d in (self.x_dim, self.y_dim) else 1 for d in dims
-                        )
+                next_mem, next_stride = self._fusion_buffers(
+                    lvl,
+                    spatial_vars,
+                    write_levels_set,
+                    use_fusion,
+                    mem_levels,
+                    max_region_bytes,
+                )
 
                 with ThreadPoolExecutor(workers) as ex:
                     futures = [
@@ -418,6 +428,15 @@ class Pyramid:
                         "wall_s": round(perf_counter() - t_level, 3),
                         **timer.as_dict(),
                     }
+        except BaseException:
+            # await any in-flight rust PUTs so no upload lands after the
+            # error surfaces; flush failures must not mask the original
+            if rust_writer is not None:
+                try:
+                    rust_writer.flush()
+                except Exception:
+                    pass
+            raise
         finally:
             if pbar is not None:
                 pbar.close()
@@ -430,6 +449,55 @@ class Pyramid:
             rust_stats["encode_s"] = round(rust_stats["write_s"], 3)
             all_stats["rust_io"] = rust_stats
         return all_stats if stats else None
+
+    def _fusion_buffers(
+        self,
+        lvl: int,
+        spatial_vars: list[str],
+        write_levels_set: set[int],
+        use_fusion: bool,
+        mem_levels: dict[str, np.ndarray],
+        max_region_bytes: int,
+    ) -> tuple[dict[str, np.ndarray], dict[str, tuple[int, ...]]]:
+        """Pre-allocate next-level buffers for variables eligible for fusion.
+
+        Eligibility: fusion enabled AND next level exists in the write plan
+        AND this variable is sourced from memory (or we're at level 0)
+        AND each spatial axis of the region shape is even (alignment guard).
+        """
+        next_mem: dict[str, np.ndarray] = {}
+        next_stride: dict[str, tuple[int, ...]] = {}
+        if not (
+            use_fusion
+            and (lvl + 1) in self.level_templates
+            and (lvl + 1) in write_levels_set
+        ):
+            return next_mem, next_stride
+        step = self._step(lvl + 1)
+        for name in spatial_vars:
+            if lvl > 0 and name not in mem_levels:
+                continue  # no memory source; skip fusion for this var
+            dims = self.level_templates[lvl][name].dims
+            region_shape = self._region_shape(lvl, name, max_region_bytes)
+            # guard checks region shape; the fused hook (s.start // f)
+            # also needs region starts divisible by step -- safe today
+            # because level>0 regions are shard-sized with shape-multiple
+            # starts. If unaligned, fusion is skipped here and it falls
+            # back to the read-from-prev-level downsample_level path
+            # (correct for any stride).
+            spatial_ok = all(
+                region_shape[i] % step == 0
+                for i, d in enumerate(dims)
+                if d in (self.x_dim, self.y_dim)
+            )
+            if not spatial_ok:
+                continue
+            next_da = self.level_templates[lvl + 1][name]
+            next_mem[name] = np.empty(next_da.shape, next_da.dtype)
+            next_stride[name] = tuple(
+                step if d in (self.x_dim, self.y_dim) else 1 for d in dims
+            )
+        return next_mem, next_stride
 
     def _write_var(
         self,
@@ -452,7 +520,7 @@ class Pyramid:
         fill = _to_python(self.fill_values.get(name))
 
         attrs = _to_python(dict(template_da.attrs))
-        extra_coords = [c for c in source_da.coords if c not in source_da.dims]
+        extra_coords = [str(c) for c in source_da.coords if c not in source_da.dims]
         if extra_coords:
             attrs["coordinates"] = " ".join(extra_coords)
 
@@ -463,7 +531,7 @@ class Pyramid:
             dtype=template_da.dtype,
             chunks=enc["chunks"],
             shards=enc.get("shards"),
-            dimension_names=template_da.dims,
+            dimension_names=[str(d) for d in template_da.dims],
             attributes=attrs,
             fill_value=fill,
             overwrite=True,
@@ -502,7 +570,7 @@ class Pyramid:
             step if d in (self.x_dim, self.y_dim) else 1 for d in template_da.dims
         )
         return downsample_level(
-            root[f"{lvl - 1}/{name}"],
+            cast(zarr.Array, root[f"{lvl - 1}/{name}"]),
             dst,
             stride=stride,
             method=self.method,
