@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
 import xarray as xr
-from hypothesis import assume, given, settings, strategies as st
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
+
 from topozarr.coarsen import create_pyramid
 
 spatial_names = st.sampled_from(["x", "y", "lon", "lat", "X", "Y"])

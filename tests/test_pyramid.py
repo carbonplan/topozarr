@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 import xarray as xr
 import zarr
+
 from topozarr.coarsen import create_pyramid
 from topozarr.metadata import ZarrLayerVarConfig
 
@@ -111,6 +112,43 @@ def test_write_invalid_levels(create_dataset):
 
     with pytest.raises(ValueError, match=r"invalid levels \[2, 5\]"):
         pyramid.write(zarr.storage.MemoryStore(), levels=[1, 2, 5])
+
+
+def test_write_levels_missing_predecessor_raises(create_dataset):
+    pyramid = create_pyramid(create_dataset(), levels=3)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store, levels=[0])
+
+    # level 2 needs level 1, which is neither in the plan nor in the store
+    with pytest.raises(ValueError, match="level 2 is coarsened from level 1"):
+        pyramid.write(store, mode="a", levels=[0, 2])
+
+
+def test_write_levels_predecessor_from_store(create_dataset):
+    ds = create_dataset(nx=16, ny=16)
+    pyramid = create_pyramid(ds, levels=2)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store, levels=[0])
+    pyramid.write(store, mode="a", levels=[1])
+
+    ref = zarr.storage.MemoryStore()
+    pyramid.write(ref)
+    np.testing.assert_array_equal(
+        _read_level(store, 1, "elevation"), _read_level(ref, 1, "elevation")
+    )
+
+
+def test_write_subset_mode_w_existing_store_raises(create_dataset):
+    pyramid = create_pyramid(create_dataset(), levels=2)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+
+    # rewriting a subset with mode="w" would delete level 0
+    with pytest.raises(ValueError, match="pass mode='a'"):
+        pyramid.write(store, levels=[1])
+
+    # a fresh store has nothing to delete; subset with mode="w" is fine
+    pyramid.write(zarr.storage.MemoryStore(), levels=[0])
 
 
 def test_non_uniform_coords_raise(create_dataset):
