@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any
 
 import numpy as np
 import xarray as xr
 from pyproj import CRS
+
 from .chunking import (
-    calculate_chunk_size,
-    calculate_shard_size,
     DEFAULT_CHUNK_BYTES,
     DEFAULT_CHUNKS_PER_SHARD,
     ChunksPerShard,
+    calculate_chunk_size,
+    calculate_shard_size,
     get_ideal_dim,
     snap_chunk_to_source,
 )
@@ -73,7 +74,7 @@ def create_level_encoding(
     source_chunks: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     spatial_vars = {
-        var_name: da
+        str(var_name): da
         for var_name, da in ds.data_vars.items()
         if x_dim in da.dims and y_dim in da.dims
     }
@@ -112,7 +113,7 @@ def _create_var_encoding(
             c = calculate_chunk_size(da.shape[idx], ideal_chunk)
         chunks[idx] = c
 
-        if shards is not None:
+        if shards is not None and chunks_per_shard is not None:
             shards[idx] = calculate_shard_size(da.shape[idx], c, chunks_per_shard)
 
     for i, dim in enumerate(da.dims):

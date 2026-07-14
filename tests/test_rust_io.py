@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import xarray as xr
+
 from topozarr.coarsen import create_pyramid
 from topozarr.rust_io import store_to_url
 
@@ -80,6 +81,21 @@ def test_rust_io_writes_noncontiguous_block(tmp_path, order):
 
     out = zarr.open_array(str(dst), path="elevation", mode="r")
     np.testing.assert_array_equal(out[:], data)
+
+
+def test_rust_io_flush_on_write_error(create_dataset, tmp_path, monkeypatch):
+    # a failure mid-write must still flush the rust writer (awaiting any
+    # in-flight PUTs) and surface the original error, not hang or mask it
+    from topozarr.pyramid import Pyramid
+
+    pyramid = create_pyramid(create_dataset(), levels=2)
+
+    def boom(self, *args, **kwargs):
+        raise RuntimeError("worker failure")
+
+    monkeypatch.setattr(Pyramid, "_write_var", boom)
+    with pytest.raises(RuntimeError, match="worker failure"):
+        pyramid.write(str(tmp_path / "p.zarr"), io="rust")
 
 
 def test_store_to_url_obstore(s3_zarr_store):

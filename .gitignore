@@ -18,6 +18,7 @@ wheels/
 # notebooks
 .ipynb_checkpoints/
 *.ipynb
+notebooks/
 
 # data files
 *.h5

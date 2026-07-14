@@ -6,7 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import zarr
+import zarr.storage
 
 
 def store_to_url(store: Any) -> tuple[str, dict[str, str]]:

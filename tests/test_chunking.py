@@ -58,6 +58,7 @@ def test_shard_size_overrides(create_dataset):
 
 def test_written_arrays_match_shard_encoding(create_dataset):
     import zarr
+
     from topozarr.coarsen import create_pyramid
 
     ds = create_dataset(nx=1000, ny=1000)
@@ -118,8 +119,9 @@ def test_snap_chunk_small_dim():
 
 
 def test_pyramid_level0_chunks_snap_to_source(create_dataset):
-    import zarr
     import xarray as xr
+    import zarr
+
     from topozarr.coarsen import create_pyramid
 
     ds = create_dataset(nx=2000, ny=2000, add_crs=False)

@@ -4,18 +4,18 @@ import numpy as np
 import xarray as xr
 import xproj  # noqa: F401 - registers .proj accessor
 
-from .metadata import (
-    create_level_encoding,
-    create_multiscale_metadata,
-    ZarrLayerVarConfig,
-)
-from .pyramid import CoarseningMethod, Pyramid, source_chunks
 from .chunking import (
     DEFAULT_CHUNK_BYTES,
     DEFAULT_CHUNKS_PER_SHARD,
     ChunksPerShard,
     validate_chunks_per_shard,
 )
+from .metadata import (
+    ZarrLayerVarConfig,
+    create_level_encoding,
+    create_multiscale_metadata,
+)
+from .pyramid import CoarseningMethod, Pyramid, source_chunks
 
 
 def get_crs(ds: xr.Dataset) -> str:
@@ -173,7 +173,9 @@ def create_pyramid(
             Mutually exclusive with ``levels``.
         x_dim: Name of the x (longitude / easting) dimension.
         y_dim: Name of the y (latitude / northing) dimension.
-        method: Spatial aggregation method for coarsening.
+        method: Spatial aggregation method for coarsening. Integer variables
+            keep their dtype: ``mean`` truncates toward zero (unlike
+            ``xarray.coarsen``, which promotes to float).
         target_chunk_bytes: Target uncompressed size per chunk (default ~500 KB).
         chunks_per_shard: Number of chunks per shard along each spatial dimension
             (e.g. ``4`` → 4×4 = 16 chunks per shard, ~8 MB). Must be a power
@@ -247,7 +249,7 @@ def create_pyramid(
     # _FillValue if declared; else NaN for floats (matches xarray's zarr
     # default and lets the engine skip all-fill regions)
     fill_values = {
-        name: da.encoding.get(
+        str(name): da.encoding.get(
             "_FillValue",
             da.attrs.get(
                 "_FillValue",
