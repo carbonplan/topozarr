@@ -18,6 +18,31 @@ from .chunking import (
 )
 
 
+MULTISCALES_CONVENTION = {
+    "schema_url": "https://raw.githubusercontent.com/zarr-conventions/multiscales/refs/tags/v1/schema.json",
+    "spec_url": "https://github.com/zarr-conventions/multiscales/blob/v1/README.md",
+    "uuid": "d35379db-88df-4056-af3a-620245f8e347",
+    "name": "multiscales",
+    "description": "Multiscale layout of zarr datasets",
+}
+
+PROJ_CONVENTION = {
+    "schema_url": "https://raw.githubusercontent.com/zarr-conventions/geo-proj/refs/tags/v1/schema.json",
+    "spec_url": "https://github.com/zarr-conventions/geo-proj/blob/v1/README.md",
+    "uuid": "f17cb550-5864-4468-aeb7-f3180cfb622f",
+    "name": "proj",
+    "description": "Coordinate reference system information for geospatial data",
+}
+
+SPATIAL_CONVENTION = {
+    "schema_url": "https://raw.githubusercontent.com/zarr-conventions/spatial/refs/tags/v1/schema.json",
+    "spec_url": "https://github.com/zarr-conventions/spatial/blob/v1/README.md",
+    "uuid": "689b58e2-cf7b-45e0-9fff-9cfc0883d6b4",
+    "name": "spatial",
+    "description": "Spatial coordinate information",
+}
+
+
 @dataclass
 class ZarrLayerVarConfig:
     """Per-variable visualization hints for zarr-layer.
@@ -163,6 +188,35 @@ def _get_spatial_bbox(
     return [xmin, ymin, xmax, ymax]
 
 
+def create_geozarr_metadata(
+    ds: xr.Dataset,
+    x_dim: str,
+    y_dim: str,
+    crs: str,
+    layer_hints: dict[str, ZarrLayerVarConfig] | None = None,
+) -> dict[str, Any]:
+    """Geozarr convention attrs (proj + spatial) for a single-level dataset.
+
+    No ``multiscales`` convention or layout; suitable for a flat zarr group.
+    """
+    transform = _get_affine_transform(ds, x_dim, y_dim)
+    return {
+        "zarr_conventions": [PROJ_CONVENTION, SPATIAL_CONVENTION],
+        "proj:code": crs,
+        "proj:wkt2": CRS.from_user_input(crs).to_wkt(),
+        "spatial:dimensions": [y_dim, x_dim],
+        "spatial:registration": "pixel",
+        "spatial:transform": transform,
+        "spatial:bbox": _get_spatial_bbox(ds, x_dim, y_dim, transform),
+        "spatial:shape": [int(ds.sizes[y_dim]), int(ds.sizes[x_dim])],
+        **(
+            {"zarr-layer": {k: asdict(v) for k, v in layer_hints.items()}}
+            if layer_hints is not None
+            else {}
+        ),
+    }
+
+
 def create_multiscale_metadata(
     ds: xr.Dataset,
     x_dim: str,
@@ -222,41 +276,11 @@ def create_multiscale_metadata(
 
     # ref: https://github.com/zarr-conventions/multiscales/blob/main/examples/geospatial-pyramid.json
 
-    return {
-        "zarr_conventions": [
-            {
-                "schema_url": "https://raw.githubusercontent.com/zarr-conventions/multiscales/refs/tags/v1/schema.json",
-                "spec_url": "https://github.com/zarr-conventions/multiscales/blob/v1/README.md",
-                "uuid": "d35379db-88df-4056-af3a-620245f8e347",
-                "name": "multiscales",
-                "description": "Multiscale layout of zarr datasets",
-            },
-            {
-                "schema_url": "https://raw.githubusercontent.com/zarr-conventions/geo-proj/refs/tags/v1/schema.json",
-                "spec_url": "https://github.com/zarr-conventions/geo-proj/blob/v1/README.md",
-                "uuid": "f17cb550-5864-4468-aeb7-f3180cfb622f",
-                "name": "proj",
-                "description": "Coordinate reference system information for geospatial data",
-            },
-            {
-                "schema_url": "https://raw.githubusercontent.com/zarr-conventions/spatial/refs/tags/v1/schema.json",
-                "spec_url": "https://github.com/zarr-conventions/spatial/blob/v1/README.md",
-                "uuid": "689b58e2-cf7b-45e0-9fff-9cfc0883d6b4",
-                "name": "spatial",
-                "description": "Spatial coordinate information",
-            },
-        ],
-        "multiscales": {"layout": layout, "resampling_method": method},
-        "proj:code": crs,
-        "proj:wkt2": CRS.from_user_input(crs).to_wkt(),
-        "spatial:dimensions": [y_dim, x_dim],
-        "spatial:registration": "pixel",
-        "spatial:transform": root_transform,
-        "spatial:bbox": _get_spatial_bbox(ds, x_dim, y_dim, root_transform),
-        "spatial:shape": [int(ds.sizes[y_dim]), int(ds.sizes[x_dim])],
-        **(
-            {"zarr-layer": {k: asdict(v) for k, v in layer_hints.items()}}
-            if layer_hints is not None
-            else {}
-        ),
-    }
+    attrs = create_geozarr_metadata(ds, x_dim, y_dim, crs, layer_hints)
+    attrs["zarr_conventions"] = [
+        MULTISCALES_CONVENTION,
+        PROJ_CONVENTION,
+        SPATIAL_CONVENTION,
+    ]
+    attrs["multiscales"] = {"layout": layout, "resampling_method": method}
+    return attrs

@@ -1,6 +1,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from .coarsen import create_pyramid
+from .geozarr import attach_geozarr_metadata
 from .metadata import ZarrLayerVarConfig
 from .pyramid import CoarseningMethod, Pyramid
 
@@ -9,4 +10,10 @@ try:
 except PackageNotFoundError:
     __version__ = "0.0.0+dev"
 
-__all__ = ["create_pyramid", "Pyramid", "CoarseningMethod", "ZarrLayerVarConfig"]
+__all__ = [
+    "create_pyramid",
+    "attach_geozarr_metadata",
+    "Pyramid",
+    "CoarseningMethod",
+    "ZarrLayerVarConfig",
+]
