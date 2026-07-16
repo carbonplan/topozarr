@@ -50,7 +50,7 @@ test = [
     "ty>=0.0.59",
 ]
 conformance = [
-    "geozarr-toolkit>=0.1.1",
+    "geozarr-toolkit>=0.1.1,<0.2",
     {include-group = "test"},
 ]
 docs = [

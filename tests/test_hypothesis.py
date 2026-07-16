@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import xarray as xr
+import zarr
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
@@ -73,6 +74,11 @@ def test_pyramid_integration_robustness(ds_info, levels):
                 for c, s in zip(enc["chunks"], enc["shards"]):
                     assert c >= 1
                     assert s % c == 0
+
+        store = zarr.storage.MemoryStore()
+        pyramid.write(store)
+        root = zarr.open_group(store, mode="r")
+        assert set(root.keys()) == {str(lvl) for lvl in range(levels)}
 
 
 @st.composite

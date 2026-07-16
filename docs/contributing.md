@@ -30,7 +30,7 @@ uv run pre-commit run --all-files
 To regenerate the demo datasets in S3 (requires AWS credentials), install the `tutorial` extra and run the build script:
 
 ```bash
-uv sync --extra tutorial
+uv sync --group test --extra tutorial
 uv run python scripts/build_demo_data.py --help
 ```
 

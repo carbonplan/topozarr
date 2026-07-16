@@ -189,8 +189,10 @@ def create_pyramid(
 
     Raises:
         ValueError: If ``ds`` has no CRS, ``chunks_per_shard`` is not a
-            power of 2 in the range 1–32, or a spatial variable has more
-            than 4 dimensions (topozarr-core kernel limit).
+            power of 2 in the range 1–32, ``x_dim`` or ``y_dim`` is not a
+            dimension of ``ds``, no data variable has both spatial
+            dimensions, or a spatial variable has more than 4 dimensions
+            (topozarr-core kernel limit).
 
     Examples:
         ```python
@@ -212,6 +214,15 @@ def create_pyramid(
     factors = _resolve_factors(levels, factors)
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
+    if x_dim not in ds.dims:
+        raise ValueError(f"x_dim {x_dim!r} not found in dataset dims {tuple(ds.dims)}")
+    if y_dim not in ds.dims:
+        raise ValueError(f"y_dim {y_dim!r} not found in dataset dims {tuple(ds.dims)}")
+    if not any(x_dim in da.dims and y_dim in da.dims for da in ds.data_vars.values()):
+        raise ValueError(
+            f"no variable has both x_dim {x_dim!r} and y_dim {y_dim!r}; "
+            "nothing to pyramid"
+        )
     for name, da in ds.data_vars.items():
         if x_dim in da.dims and y_dim in da.dims and da.ndim > 4:
             raise ValueError(

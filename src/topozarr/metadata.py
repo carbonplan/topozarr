@@ -17,7 +17,6 @@ from .chunking import (
     snap_chunk_to_source,
 )
 
-
 MULTISCALES_CONVENTION = {
     "schema_url": "https://raw.githubusercontent.com/zarr-conventions/multiscales/refs/tags/v1/schema.json",
     "spec_url": "https://github.com/zarr-conventions/multiscales/blob/v1/README.md",

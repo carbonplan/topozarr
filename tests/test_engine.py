@@ -20,7 +20,9 @@ def _xr_reference(a: np.ndarray, stride: tuple[int, ...], method: str) -> np.nda
 
 
 @pytest.mark.parametrize("method", METHODS)
-@pytest.mark.parametrize("shape", [(8, 8), (101, 100), (7, 5), (3,), (2, 16, 17)])
+@pytest.mark.parametrize(
+    "shape", [(8, 8), (101, 100), (7, 5), (3,), (2, 16, 17), (2, 3, 8, 8)]
+)
 def test_block_reduce_matches_xarray_float(method, shape):
     rng = np.random.default_rng(42)
     a = rng.random(shape).astype("f8")
@@ -52,6 +54,34 @@ def test_block_reduce_int_exact(method, dtype):
     a = rng.integers(0, 100, (15, 22)).astype(dtype)
     got = block_reduce(a, (2, 2), method)
     want = _xr_reference(a, (2, 2), method)
+    np.testing.assert_array_equal(got, want)
+    assert got.dtype == dtype
+
+
+@pytest.mark.parametrize("dtype", ["u1", "u2", "i2", "i4", "i8"])
+def test_block_reduce_int_sum_exact(dtype):
+    dtype = np.dtype(dtype)
+    rng = np.random.default_rng(11)
+    a = rng.integers(0, 10, (15, 22)).astype(dtype)
+    got = block_reduce(a, (2, 2), "sum")
+    want = _xr_reference(a, (2, 2), "sum")
+    np.testing.assert_array_equal(got, want)
+    assert got.dtype == dtype
+
+
+@pytest.mark.parametrize("dtype", ["u1", "i2", "i4"])
+def test_block_reduce_int_mean_truncates_toward_zero(dtype):
+    dtype = np.dtype(dtype)
+    # left window: 1,2,3,4 -> mean 2.5 -> truncates to 2
+    # right window (signed only): -1,-1,-1,-2 -> mean -1.25 -> truncates
+    # toward zero to -1 (flooring would give -2)
+    if dtype.kind == "u":
+        a = np.array([[1, 2, 5, 7], [3, 4, 5, 6]], dtype=dtype)
+        want = np.array([[2, 5]], dtype=dtype)
+    else:
+        a = np.array([[1, 2, -1, -1], [3, 4, -1, -2]], dtype=dtype)
+        want = np.array([[2, -1]], dtype=dtype)
+    got = block_reduce(a, (2, 2), "mean")
     np.testing.assert_array_equal(got, want)
     assert got.dtype == dtype
 

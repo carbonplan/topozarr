@@ -57,6 +57,7 @@ def test_shard_size_overrides(create_dataset):
 
 
 def test_written_arrays_match_shard_encoding(create_dataset):
+    import numpy as np
     import zarr
 
     from topozarr.coarsen import create_pyramid
@@ -72,6 +73,11 @@ def test_written_arrays_match_shard_encoding(create_dataset):
             arr = root[f"{level_path.lstrip('/')}/{var_name}"]
             assert arr.chunks == var_enc["chunks"]
             assert arr.shards == var_enc["shards"]
+
+    # metadata alone doesn't prove the write path stored real data: check
+    # level 0 (a verbatim copy) actually holds the source values, not a
+    # zero-filled or corrupted array
+    np.testing.assert_array_equal(root["0/elevation"][:], ds.elevation.values)
 
 
 def test_disable_sharding(create_dataset):
