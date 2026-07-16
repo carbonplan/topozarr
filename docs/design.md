@@ -11,7 +11,7 @@ holding:
 
 - **Datatree**: per-level `xr.Dataset`s with real (mean-coarsened)
   coordinates.
-- **encoding**: chunk and shard sizes per variable per level,
+- **encoding**: chunk and shard sizes per variable per level.
 - **attrs**: root metadata following the zarr-conventions
   [multiscales](https://github.com/zarr-conventions/multiscales),
   [proj](https://github.com/zarr-conventions/geo-proj), and
