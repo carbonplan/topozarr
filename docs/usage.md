@@ -34,9 +34,6 @@ pyramid = create_pyramid(ds, factors=[1, 4, 16])
 
 Levels are always named sequentially (`0, 1, 2, …`) regardless of `factors`; the downsample factor isn't in the node name but in the multiscales metadata (`layout[i].transform.scale` and each level's `spatial:transform`).
 
-
-
-
 ## Metadata only (no pyramid)
 
 Low-resolution datasets don't need a pyramid. `attach_geozarr_metadata` returns
@@ -74,7 +71,7 @@ pyramid.write("pyramid.zarr", progress=True)
 
 The threadpool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 read regions on chunked sources. For bounded memory on large stores, open the source lazily (e.g. `xr.open_zarr(store, chunks=None)`). See [Design](design.md#streaming-memory-model).
 
-Pass `keep_levels_in_memory=True` to keep levels in RAM and skip re-reading them from the store between levels ( may be faster, more memory). `None` (default) enables this automatically when subsequent levels fit in RAM.
+Pass `keep_levels_in_memory=True` to keep levels in RAM and skip re-reading them from the store between levels (faster, but uses more memory). `None` (default) enables this automatically when subsequent levels fit in RAM.
 
 ## Visualization hints
 
@@ -149,7 +146,7 @@ pyramid.write(session.store, mode="w")
 session.commit("write pyramid")
 ```
 
-## Experimental:  Rust write path
+## Experimental: Rust write path
 
 Passing `io="rust"` writes through Rust using the Zarrs crate instead of `zarr-python` (no extra install):
 

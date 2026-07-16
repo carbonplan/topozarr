@@ -5,7 +5,7 @@
 
 Python library to create multiscale Zarr stores for usage with [zarr-layer](https://zarr-layer.demo.carbonplan.org/).
 
-Tries to match the GeoZarr spec, which is composed of these [zarr-conventions](https://github.com/zarr-conventions):
+Tries to follow the GeoZarr spec, which is composed of these [zarr-conventions](https://github.com/zarr-conventions):
 
 - [multiscales](https://github.com/zarr-conventions/multiscales) — pyramid structure and resolution levels
 - [proj:](https://github.com/zarr-conventions/geo-proj) — coordinate reference system (CRS)
@@ -23,7 +23,7 @@ uv add topozarr
 pip install topozarr
 ```
 
-Multiscales are computed by `topozarr-core`, a small Rust kernel (installed automatically as a wheel), and written with `zarr-python`. For Dask-distributed workflows, `pyramid.as_datatree()` returns a lazy `xr.DataTree` you can write yourself. The `tutorial` extra should include everything needed to run the examples below:
+Multiscales are computed by `topozarr-core`, a small Rust kernel installed automatically as a wheel. The `tutorial` extra includes everything needed to run the examples below:
 
 ```bash
 uv add 'topozarr[tutorial]'
@@ -73,44 +73,20 @@ Full docs at **[carbonplan.github.io/topozarr](https://carbonplan.github.io/topo
 
 ## Contributing
 
-Clone the repo and install with the `test` dependency group.
+Clone the repo, install with the `test` dependency group, and run the tests:
 
 ```bash
 git clone https://github.com/carbonplan/topozarr
 cd topozarr
 uv sync --group test
-```
-
-Run tests:
-
-```bash
 uv run pytest -n auto
 ```
 
-Run conformance tests against the GeoZarr spec (requires the `conformance` group):
-
-```bash
-uv sync --group conformance
-uv run pytest -n auto -m conformance
-```
-
-Lint and format:
-
-```bash
-uv run pre-commit run --all-files
-```
-
-To regenerate the demo datasets in S3 (requires AWS credentials), install the `tutorial` extra and run the build script:
-
-```bash
-uv sync --extra tutorial
-uv run python scripts/build_demo_data.py --help
-```
+Building from source requires a [Rust toolchain](https://rustup.rs) for the `topozarr-core` kernel. See the [contributing docs](https://carbonplan.github.io/topozarr/contributing/) for conformance tests, linting, and demo-data scripts.
 
 ## License
 
-> [!IMPORTANT]
-> This code is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see the [LICENSE](LICENSE) file for details.
 
 ## About Us
 

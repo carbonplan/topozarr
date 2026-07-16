@@ -19,7 +19,7 @@ uv add topozarr
 pip install topozarr
 ```
 
-The `tutorial` extra should include everything needed to run the examples in the [Usage](usage.md) guide:
+The `tutorial` extra includes everything needed to run the examples in the [Usage](usage.md) guide:
 
 ```bash
 uv add 'topozarr[tutorial]'
