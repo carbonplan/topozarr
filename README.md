@@ -82,6 +82,25 @@ uv sync --group test
 uv run pytest -n auto
 ```
 
+Run conformance tests against the GeoZarr spec (requires the `conformance` group):
+
+```bash
+uv sync --group conformance
+uv run pytest -n auto -m conformance
+```
+
+Lint and format:
+
+```bash
+uv run pre-commit run --all-files
+```
+
+To regenerate the demo datasets in S3 (requires AWS credentials), install the `tutorial` extra and run the build script:
+
+```bash
+uv sync --group test --extra tutorial
+uv run python scripts/build_demo_data.py --help
+```
 Building from source requires a [Rust toolchain](https://rustup.rs) for the `topozarr-core` kernel. See the [contributing docs](https://carbonplan.github.io/topozarr/contributing/) for conformance tests, linting, and demo-data scripts.
 
 ## License

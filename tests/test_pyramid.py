@@ -44,11 +44,40 @@ def test_pyramid_write_roundtrip(create_dataset):
     np.testing.assert_allclose(dt["1"].ds.x.values, expected.x.values)
 
 
+def test_pyramid_write_integer_mean_truncates(create_dataset):
+    ds = create_dataset(nx=4, ny=2)
+    # row0: 1,2,5,7 -> mean 2.5 -> truncates to 2
+    # row1: 3,4,5,6 -> combined with row0 window: (1+2+3+4)/4=2.5 -> 2,
+    # (5+7+5+6)/4=5.75 -> 5
+    ds["elevation"] = (("y", "x"), np.array([[1, 2, 5, 7], [3, 4, 5, 6]], dtype="i2"))
+    pyramid = create_pyramid(ds, levels=2)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+
+    dt = xr.open_datatree(store, engine="zarr", consolidated=False)
+    assert dt["1"].ds.elevation.dtype == np.dtype("i2")
+    np.testing.assert_array_equal(dt["1"].ds.elevation.values, [[2, 5]])
+
+
 def test_crs_enforcement(create_dataset):
     ds_no_crs = create_dataset(add_crs=False)
 
     with pytest.raises(ValueError, match="dataset is missing a crs"):
         create_pyramid(ds_no_crs, levels=2)
+
+
+def test_missing_x_dim_raises(create_dataset):
+    ds = create_dataset()
+
+    with pytest.raises(ValueError, match="x_dim 'lon' not found"):
+        create_pyramid(ds, levels=2, x_dim="lon")
+
+
+def test_missing_y_dim_raises(create_dataset):
+    ds = create_dataset()
+
+    with pytest.raises(ValueError, match="y_dim 'lat' not found"):
+        create_pyramid(ds, levels=2, y_dim="lat")
 
 
 def test_custom_dimensions(create_dataset):
@@ -112,6 +141,22 @@ def test_write_invalid_levels(create_dataset):
 
     with pytest.raises(ValueError, match=r"invalid levels \[2, 5\]"):
         pyramid.write(zarr.storage.MemoryStore(), levels=[1, 2, 5])
+
+
+def test_write_negative_level_raises(create_dataset):
+    pyramid = create_pyramid(create_dataset(), levels=2)
+
+    with pytest.raises(ValueError, match=r"invalid levels \[-1\]"):
+        pyramid.write(zarr.storage.MemoryStore(), levels=[-1])
+
+
+def test_write_empty_levels_is_noop(create_dataset):
+    pyramid = create_pyramid(create_dataset(), levels=2)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store, levels=[])
+
+    root = zarr.open_group(store, mode="r")
+    assert list(root.keys()) == []
 
 
 def test_write_levels_missing_predecessor_raises(create_dataset):
@@ -183,6 +228,15 @@ def test_spatial_var_ndim_limit(create_dataset):
     ds["stacked"] = ds.elevation.expand_dims(a=2, b=2, c=2)
 
     with pytest.raises(ValueError, match="supports at most 4"):
+        create_pyramid(ds, levels=2)
+
+
+def test_no_spatial_variables_raises(create_dataset):
+    ds = create_dataset()
+    ds["time_series"] = ("t", np.arange(4))
+    ds = ds.drop_vars("elevation")
+
+    with pytest.raises(ValueError, match="no variable has both"):
         create_pyramid(ds, levels=2)
 
 

@@ -68,7 +68,7 @@ struct PutQueue {
 }
 
 impl PutQueue {
-    fn spawn_set(&self, key: StoreKey, value: Bytes, nbytes: u64) {
+    fn spawn_set(&self, key: StoreKey, value: Bytes, nbytes: u64) -> Result<(), String> {
         let store = self.async_store.clone();
         let sem = self.sem.clone();
         let stats = self.stats.clone();
@@ -76,7 +76,7 @@ impl PutQueue {
         let permit = self
             .rt
             .block_on(sem.acquire_owned())
-            .expect("put semaphore closed");
+            .map_err(|_| "put semaphore closed".to_string())?;
         let handle = self.rt.spawn(async move {
             let _permit = permit;
             let t0 = Instant::now();
@@ -89,6 +89,7 @@ impl PutQueue {
             r
         });
         self.pending.lock().unwrap().push(handle);
+        Ok(())
     }
 
     /// Await every outstanding PUT, returning the first error. All handles
@@ -143,8 +144,10 @@ impl WritableStorageTraits for TimingStorage {
         let nbytes = value.len() as u64;
         if let Some(q) = &self.put_queue {
             // async path: enqueue the upload and return so the worker thread
-            // resumes encoding; errors surface in flush()
-            q.spawn_set(key.clone(), value, nbytes);
+            // resumes encoding; errors surface in flush() (except a closed
+            // semaphore, which fails immediately here since nothing was queued)
+            q.spawn_set(key.clone(), value, nbytes)
+                .map_err(StorageError::Other)?;
             return Ok(());
         }
         let t0 = Instant::now();
@@ -541,10 +544,21 @@ mod tests {
     fn spawn_set_uploads_and_flush_succeeds() {
         let rt = runtime();
         let q = queue(&rt);
-        q.spawn_set(StoreKey::new("a/b").unwrap(), Bytes::from_static(b"xyz"), 3);
-        q.spawn_set(StoreKey::new("a/c").unwrap(), Bytes::from_static(b"12"), 2);
+        q.spawn_set(StoreKey::new("a/b").unwrap(), Bytes::from_static(b"xyz"), 3)
+            .unwrap();
+        q.spawn_set(StoreKey::new("a/c").unwrap(), Bytes::from_static(b"12"), 2)
+            .unwrap();
         assert_eq!(q.flush(), Ok(()));
         assert_eq!(q.stats.put_ops.load(Ordering::Relaxed), 2);
         assert_eq!(q.stats.put_bytes.load(Ordering::Relaxed), 5);
+    }
+
+    #[test]
+    fn spawn_set_returns_err_when_semaphore_closed() {
+        let rt = runtime();
+        let q = queue(&rt);
+        q.sem.close();
+        let result = q.spawn_set(StoreKey::new("a/b").unwrap(), Bytes::from_static(b"xyz"), 3);
+        assert!(result.is_err());
     }
 }

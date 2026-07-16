@@ -2538,7 +2538,7 @@ provides-extras = ["tutorial"]
 [package.metadata.requires-dev]
 conformance = [
     { name = "boto3", specifier = ">=1.0" },
-    { name = "geozarr-toolkit", specifier = ">=0.1.1" },
+    { name = "geozarr-toolkit", specifier = ">=0.1.1,<0.2" },
     { name = "hypothesis", specifier = ">=6.150.0" },
     { name = "icechunk", specifier = ">=1.1.19" },
     { name = "ipdb", specifier = ">=0.13.13" },

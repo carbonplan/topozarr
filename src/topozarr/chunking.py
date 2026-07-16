@@ -47,7 +47,10 @@ def snap_chunk_to_source(
     Returns None when no candidate chunk lies within [ideal/2, ideal*2] and
     >= 128 (caller falls back to the plain heuristic).
     """
-    # small dims take a single chunk anyway; nothing to snap
+    # small dims take a single chunk anyway; nothing to snap. src_chunk <= 0
+    # shouldn't occur (callers derive it from real array chunk sizes) but is
+    # guarded defensively since a bogus source chunk would otherwise divide
+    # by zero below.
     if src_chunk <= 0 or dim_size <= 128 or dim_size <= ideal_chunk:
         return None
     cps = chunks_per_shard or 1
