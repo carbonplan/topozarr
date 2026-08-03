@@ -104,6 +104,44 @@ def test_block_reduce_skipna_false_propagates_nan():
     assert got[1, 1] == 1.0
 
 
+def _nearest_reference(a: np.ndarray, stride: tuple[int, ...]) -> np.ndarray:
+    # corner of each trimmed window; max(..., 1) keeps one window when an
+    # axis is smaller than its stride, matching the kernel
+    sel = tuple(slice(0, max((n // s) * s, 1), s) for n, s in zip(a.shape, stride))
+    return a[sel]
+
+
+@pytest.mark.parametrize(
+    "shape", [(8, 8), (101, 100), (7, 5), (3,), (2, 16, 17), (2, 3, 8, 8)]
+)
+def test_block_reduce_nearest_matches_strided(shape):
+    rng = np.random.default_rng(42)
+    a = rng.random(shape).astype("f8")
+    a.flat[::7] = np.nan  # corners pass through, including NaN
+    stride = tuple(2 if i >= len(shape) - 2 else 1 for i in range(len(shape)))
+    got = block_reduce(a, stride, "nearest")
+    np.testing.assert_array_equal(got, _nearest_reference(a, stride))
+    assert got.dtype == a.dtype
+
+
+@pytest.mark.parametrize("dtype", ["u1", "u2", "i2", "i4", "i8"])
+def test_block_reduce_nearest_int_categorical(dtype):
+    # class codes survive unchanged: output values are a subset of the input
+    dtype = np.dtype(dtype)
+    rng = np.random.default_rng(7)
+    a = rng.choice(np.array([10, 20, 30, 80], dtype=dtype), (15, 22))
+    got = block_reduce(a, (2, 2), "nearest")
+    np.testing.assert_array_equal(got, _nearest_reference(a, (2, 2)))
+    assert got.dtype == dtype
+
+
+def test_block_reduce_nearest_ignores_fill():
+    # nearest is pure decimation: a fill corner is returned as-is
+    a = np.array([[255, 2], [3, 4]], dtype="u1")
+    got = block_reduce(a, (2, 2), "nearest", fill_value=255)
+    np.testing.assert_array_equal(got, np.array([[255]], dtype="u1"))
+
+
 def test_block_reduce_smaller_than_stride():
     # axis smaller than stride collapses to size 1, matching max(n // s, 1)
     a = np.arange(6, dtype="f8").reshape(1, 6)

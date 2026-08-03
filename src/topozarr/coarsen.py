@@ -92,9 +92,11 @@ def build_level_templates(
     x_dim: str,
     y_dim: str,
 ) -> dict[int, xr.Dataset]:
-    # mean/max/min/sum are composable, so each level coarsens from the prior
-    # (coarser) level by the per-step ratio. NOTE: median/mode are NOT
-    # composable -- when added, sparse levels must reduce from native instead.
+    # mean/max/min/sum/nearest are composable, so each level coarsens from the
+    # prior (coarser) level by the per-step ratio (nearest corner-picks, and
+    # corner-of-corners == corner-of-native). NOTE: median/mode are NOT
+    # composable -- when added, levels must reduce from native instead
+    # (see planning.md).
     levels = [ds]
     for prev_factor, factor in zip(factors[:-1], factors[1:]):
         step = factor // prev_factor
@@ -175,7 +177,12 @@ def create_pyramid(
         y_dim: Name of the y (latitude / northing) dimension.
         method: Spatial aggregation method for coarsening. Integer variables
             keep their dtype: ``mean`` truncates toward zero (unlike
-            ``xarray.coarsen``, which promotes to float).
+            ``xarray.coarsen``, which promotes to float). ``nearest`` decimates
+            (keeps the top-left cell of each window) — use it for categorical
+            data such as class codes or masks, where averaging invents values.
+            It ignores fill values, and a class present only away from window
+            corners can vanish at coarse zoom (a majority ``mode`` would fix
+            that; see planning.md).
         target_chunk_bytes: Target uncompressed size per chunk (default ~500 KB).
         chunks_per_shard: Number of chunks per shard along each spatial dimension
             (e.g. ``4`` → 4×4 = 16 chunks per shard, ~8 MB). Must be a power

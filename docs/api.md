@@ -1,6 +1,6 @@
 # API Reference
 
-The public API is four objects: `create_pyramid` builds a write plan, `Pyramid` holds it, `attach_geozarr_metadata` adds geozarr convention attrs without building a pyramid, and `ZarrLayerVarConfig` carries optional visualization hints. `CoarseningMethod` is the `Literal["mean", "max", "min", "sum"]` alias accepted by `create_pyramid(method=...)`.
+The public API is four objects: `create_pyramid` builds a write plan, `Pyramid` holds it, `attach_geozarr_metadata` adds geozarr convention attrs without building a pyramid, and `ZarrLayerVarConfig` carries optional visualization hints. `CoarseningMethod` is the `Literal["mean", "max", "min", "sum", "nearest"]` alias accepted by `create_pyramid(method=...)`; `nearest` decimates (corner-pick) for categorical data.
 
 ::: topozarr.coarsen.create_pyramid
 

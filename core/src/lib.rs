@@ -14,6 +14,7 @@ enum Method {
     Max,
     Min,
     Sum,
+    Nearest,
 }
 
 impl Method {
@@ -23,8 +24,9 @@ impl Method {
             "max" => Ok(Method::Max),
             "min" => Ok(Method::Min),
             "sum" => Ok(Method::Sum),
+            "nearest" => Ok(Method::Nearest),
             _ => Err(PyValueError::new_err(format!(
-                "method must be one of 'mean', 'max', 'min', 'sum'; got {s:?}"
+                "method must be one of 'mean', 'max', 'min', 'sum', 'nearest'; got {s:?}"
             ))),
         }
     }
@@ -87,6 +89,9 @@ fn reduce_window<T: Element>(
     skipna: bool,
 ) -> T {
     match method {
+        // corner-pick decimation: fill/skipna do not apply, which keeps the
+        // op exactly composable (corner-of-corners == corner-of-native)
+        Method::Nearest => *w.iter().next().expect("windows are never empty"),
         Method::Mean | Method::Sum => {
             let mut acc = 0.0f64;
             let mut count = 0usize;
@@ -315,6 +320,48 @@ mod tests {
             reduce(b.view(), &[2, 2], Method::Sum, Some(7), true)[[0, 0]],
             0
         );
+    }
+
+    #[test]
+    fn nearest_picks_window_corner() {
+        let a = array![[1.0f64, 2.0, 5.0], [3.0, 4.0, 6.0], [7.0, 8.0, 9.0]].into_dyn();
+        // stride 2 on 3x3 trims to one window; corner is [0, 0]
+        let out = reduce(a.view(), &[2, 2], Method::Nearest, None, true);
+        assert_eq!(out.shape(), &[1, 1]);
+        assert_eq!(out[[0, 0]], 1.0);
+
+        let b = array![[1i32, 2, 3, 4], [5, 6, 7, 8]].into_dyn();
+        let out = reduce(b.view(), &[2, 2], Method::Nearest, None, true);
+        assert_eq!(out.shape(), &[1, 2]);
+        assert_eq!(out[[0, 0]], 1);
+        assert_eq!(out[[0, 1]], 3);
+    }
+
+    #[test]
+    fn nearest_ignores_fill_and_nan() {
+        // fill/NaN corners pass through unchanged regardless of skipna
+        let a = array![[f64::NAN, 2.0], [3.0, 4.0]].into_dyn();
+        assert!(reduce(a.view(), &[2, 2], Method::Nearest, None, true)[[0, 0]].is_nan());
+        let b = array![[255u8, 2], [3, 4]].into_dyn();
+        assert_eq!(
+            reduce(b.view(), &[2, 2], Method::Nearest, Some(255), true)[[0, 0]],
+            255
+        );
+    }
+
+    #[test]
+    fn nearest_composes_across_steps() {
+        // 2x then 2x equals 4x directly (corner-of-corners == corner-of-native)
+        let a = ArrayD::from_shape_fn(IxDyn(&[8, 8]), |ix| (ix[0] * 8 + ix[1]) as f64);
+        let two_step = reduce(
+            reduce(a.view(), &[2, 2], Method::Nearest, None, true).view(),
+            &[2, 2],
+            Method::Nearest,
+            None,
+            true,
+        );
+        let one_step = reduce(a.view(), &[4, 4], Method::Nearest, None, true);
+        assert_eq!(two_step, one_step);
     }
 
     #[test]

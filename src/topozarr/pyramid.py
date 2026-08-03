@@ -25,7 +25,7 @@ from .engine import (
     downsample_level,
 )
 
-CoarseningMethod = Literal["mean", "max", "min", "sum"]
+CoarseningMethod = Literal["mean", "max", "min", "sum", "nearest"]
 
 
 def _make_fused_reduce_hook(
@@ -591,12 +591,34 @@ class Pyramid:
         for lvl in range(1, self.levels):
             step = self._step(lvl)
             prev = ds_chain[-1]
-            coarsened = getattr(
-                prev.coarsen({self.x_dim: step, self.y_dim: step}, boundary="trim"),
-                self.method,
-            )()
+            if self.method == "nearest":
+                coarsened = self._decimate(prev, step)
+            else:
+                coarsened = getattr(
+                    prev.coarsen({self.x_dim: step, self.y_dim: step}, boundary="trim"),
+                    self.method,
+                )()
             ds_chain.append(coarsened)
         return ds_chain
+
+    def _decimate(self, ds: xr.Dataset, step: int) -> xr.Dataset:
+        """Corner-pick every ``step``-th cell (xarray.coarsen has no nearest).
+
+        Data is strided over floor(n/step) windows to match trim semantics.
+        Spatial coords are replaced by their window means so they stay cell
+        centers, matching the level templates written by ``write``.
+        """
+        sel = {
+            dim: slice(0, (ds.sizes[dim] // step) * step, step)
+            for dim in (self.x_dim, self.y_dim)
+        }
+        out = ds.isel(sel)
+        coords = {}
+        for name, coord in ds.coords.items():
+            if coord.ndim == 1 and coord.dims[0] in (self.x_dim, self.y_dim):
+                mean = coord.coarsen({coord.dims[0]: step}, boundary="trim").mean()
+                coords[str(name)] = mean.assign_attrs(coord.attrs)
+        return out.assign_coords(coords)
 
     def as_datatree(self) -> xr.DataTree:
         """Return a lazy DataTree with all pyramid levels coarsened via xarray.
