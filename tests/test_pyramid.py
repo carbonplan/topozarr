@@ -59,6 +59,69 @@ def test_pyramid_write_integer_mean_truncates(create_dataset):
     np.testing.assert_array_equal(dt["1"].ds.elevation.values, [[2, 5]])
 
 
+def test_pyramid_write_nearest_categorical(create_dataset):
+    ds = create_dataset(nx=16, ny=16)
+    rng = np.random.default_rng(5)
+    codes = rng.choice(np.array([10, 20, 30, 80], dtype="u1"), (16, 16))
+    ds["elevation"] = (("y", "x"), codes)
+    pyramid = create_pyramid(ds, levels=3, method="nearest")
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+
+    dt = xr.open_datatree(store, engine="zarr", consolidated=False)
+    # every level is a corner-pick of level 0: values stay valid class codes;
+    # coords remain window means (cell centers), like the other methods
+    for lvl, step in ((1, 2), (2, 4)):
+        got = dt[str(lvl)].ds.elevation
+        assert got.dtype == np.dtype("u1")
+        np.testing.assert_array_equal(got.values, codes[::step, ::step])
+        expected = ds.coarsen(x=step, y=step, boundary="trim").mean()
+        np.testing.assert_allclose(dt[str(lvl)].ds.x.values, expected.x.values)
+        np.testing.assert_allclose(dt[str(lvl)].ds.y.values, expected.y.values)
+
+
+def test_pyramid_nearest_sparse_matches_chained(create_dataset):
+    # corner-pick composes: factors=[1, 4] equals two chained 2x steps
+    ds = create_dataset(nx=16, ny=16)
+    codes = np.arange(256, dtype="i4").reshape(16, 16)
+    ds["elevation"] = (("y", "x"), codes)
+
+    sparse_store = zarr.storage.MemoryStore()
+    create_pyramid(ds, factors=[1, 4], method="nearest").write(sparse_store)
+    sparse = xr.open_datatree(sparse_store, engine="zarr", consolidated=False)
+    np.testing.assert_array_equal(sparse["1"].ds.elevation.values, codes[::4, ::4])
+
+    # single-step level equals the chained pyramid's factor-4 level
+    chained_store = zarr.storage.MemoryStore()
+    create_pyramid(ds, levels=3, method="nearest").write(chained_store)
+    chained = xr.open_datatree(chained_store, engine="zarr", consolidated=False)
+    np.testing.assert_array_equal(
+        sparse["1"].ds.elevation.values, chained["2"].ds.elevation.values
+    )
+    np.testing.assert_allclose(sparse["1"].ds.x.values, chained["2"].ds.x.values)
+    np.testing.assert_allclose(sparse["1"].ds.y.values, chained["2"].ds.y.values)
+
+
+def test_as_datatree_nearest_matches_native(create_dataset):
+    ds = create_dataset(nx=16, ny=16)
+    rng = np.random.default_rng(9)
+    ds["elevation"] = (("y", "x"), rng.choice([1, 2, 3], (16, 16)).astype("i2"))
+    pyramid = create_pyramid(ds, levels=3, method="nearest")
+
+    native_store = zarr.storage.MemoryStore()
+    pyramid.write(native_store)
+    native_dt = xr.open_datatree(native_store, engine="zarr", consolidated=False)
+
+    dt = pyramid.as_datatree()
+    for lvl in ("0", "1", "2"):
+        np.testing.assert_array_equal(
+            dt[lvl].ds.elevation.values, native_dt[lvl].ds.elevation.values
+        )
+        # datatree coords must match the written template coords exactly
+        np.testing.assert_allclose(dt[lvl].ds.x.values, native_dt[lvl].ds.x.values)
+        np.testing.assert_allclose(dt[lvl].ds.y.values, native_dt[lvl].ds.y.values)
+
+
 def test_crs_enforcement(create_dataset):
     ds_no_crs = create_dataset(add_crs=False)
 

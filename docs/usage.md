@@ -17,7 +17,7 @@ pyramid = create_pyramid(
     levels=2,
     x_dim="lon",
     y_dim="lat",
-    method="mean",  # "mean" (default) | "max" | "min" | "sum"
+    method="mean",  # "mean" (default) | "max" | "min" | "sum" | "nearest"
 )
 
 # compute and write all levels

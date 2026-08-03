@@ -5,7 +5,7 @@ import zarr
 from topozarr.coarsen import create_pyramid
 
 
-@pytest.mark.parametrize("method", ["mean", "max", "min", "sum"])
+@pytest.mark.parametrize("method", ["mean", "max", "min", "sum", "nearest"])
 def test_resampling_method(create_dataset, method):
     pyramid = create_pyramid(create_dataset(), levels=3, method=method)
     layout = pyramid.attrs["multiscales"]["layout"]

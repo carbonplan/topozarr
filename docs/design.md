@@ -78,7 +78,7 @@ variables within a level stream through one shared pool.
 
 `topozarr_core.block_reduce` (Rust, rayon-parallel, GIL released):
 
-- methods: `mean`, `max`, `min`, `sum`
+- methods: `mean`, `max`, `min`, `sum`, `nearest`
 - dtypes: `u8`, `u16`, `i16`, `i32`, `i64`, `f32`, `f64`
 - 1–4 dimensional arrays
 - shape follows `xarray.coarsen(boundary="trim")`: trailing partial windows
@@ -88,6 +88,10 @@ variables within a level stream through one shared pool.
   `mean`/`max`/`min`
 - integer dtypes stay integer: `mean` truncates toward zero (unlike
   `xarray.coarsen`, which promotes to float)
+- `nearest` decimates: each window emits its top-left cell, ignoring
+  `skipna`/`fill_value`. Intended for categorical data (class codes, masks)
+  where averaging invents values; corner-pick is exactly composable, so
+  chained per-step decimation equals decimation from native resolution
 
 ## Tuning knobs
 
