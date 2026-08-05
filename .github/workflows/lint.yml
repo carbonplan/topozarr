@@ -27,6 +27,9 @@ jobs:
       - name: Install the project
         run: uv sync --all-groups
 
+      - name: Check topozarr-core pin matches core version
+        run: uv run python scripts/check_core_pin.py
+
       - name: Run pre-commit
         run: uv run pre-commit run --all-files
 
