@@ -1,6 +1,6 @@
 [project]
 name = "topozarr"
-version = "0.1.3"
+version = "0.1.4"
 description = "Lightweight multiscale zarr"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -8,7 +8,10 @@ dependencies = [
     "numpy",
     "psutil>=5.9",
     "pyproj",
-    "topozarr-core>=0.1.0,<0.2",
+    # exact pin: the Python layer and the Rust kernel ship as separate
+    # distributions but are one unit; a range lets a resolver pair a new
+    # topozarr with an old core that lacks the kernel arm it accepts.
+    "topozarr-core==0.1.4",
     "xarray>=2025.9.0",
     "xproj>=0.2.1",
     "zarr>=3.2.1",
