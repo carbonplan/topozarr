@@ -14,8 +14,10 @@ from .chunking import (
     calculate_chunk_size,
     calculate_shard_size,
     get_ideal_dim,
+    non_spatial_shard_size,
     snap_chunk_to_source,
 )
+from .engine import DEFAULT_MAX_REGION_BYTES
 
 MULTISCALES_CONVENTION = {
     "schema_url": "https://raw.githubusercontent.com/zarr-conventions/multiscales/refs/tags/v1/schema.json",
@@ -71,6 +73,8 @@ def create_level_encoding(
     target_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
     chunks_per_shard: ChunksPerShard | None = DEFAULT_CHUNKS_PER_SHARD,
     source_chunks: dict[str, int] | None = None,
+    shard_non_spatial: bool = False,
+    coarsen_step: int = 1,
 ) -> dict[str, Any]:
     spatial_vars = {
         str(var_name): da
@@ -80,7 +84,14 @@ def create_level_encoding(
 
     return {
         var_name: _create_var_encoding(
-            da, x_dim, y_dim, target_chunk_bytes, chunks_per_shard, source_chunks
+            da,
+            x_dim,
+            y_dim,
+            target_chunk_bytes,
+            chunks_per_shard,
+            source_chunks,
+            shard_non_spatial,
+            coarsen_step,
         )
         for var_name, da in spatial_vars.items()
     }
@@ -93,6 +104,8 @@ def _create_var_encoding(
     target_chunk_bytes: int,
     chunks_per_shard: ChunksPerShard | None,
     source_chunks: dict[str, int] | None = None,
+    shard_non_spatial: bool = False,
+    coarsen_step: int = 1,
 ) -> dict[str, Any]:
     itemsize = da.dtype.itemsize
     ideal_chunk = get_ideal_dim(itemsize, target_chunk_bytes)
@@ -115,11 +128,29 @@ def _create_var_encoding(
         if shards is not None and chunks_per_shard is not None:
             shards[idx] = calculate_shard_size(da.shape[idx], c, chunks_per_shard)
 
+    # Start with one spatial shard's uncompressed size; all non-spatial
+    # dimensions share the remaining byte budget.
+    shard_bytes = itemsize
+    for idx in (y_idx, x_idx):
+        shard_bytes *= (shards or chunks)[idx]
+
+    # Producing a coarsened level's shard materializes an input region from
+    # the predecessor level expanded by the coarsening step on both spatial
+    # axes, so the write-memory budget shrinks by step**2.
+    max_shard_bytes = DEFAULT_MAX_REGION_BYTES // (coarsen_step * coarsen_step)
+
     for i, dim in enumerate(da.dims):
         if dim not in [x_dim, y_dim]:
             chunks[i] = 1
             if shards is not None:
-                shards[i] = 1
+                shards[i] = (
+                    non_spatial_shard_size(da.shape[i], shard_bytes, max_shard_bytes)
+                    if shard_non_spatial
+                    else 1
+                )
+                # Include previously packed non-spatial dimensions so their
+                # combined shard size stays within the byte budget.
+                shard_bytes *= shards[i]
 
     var_encoding = {"chunks": tuple(chunks)}
     if shards is not None:

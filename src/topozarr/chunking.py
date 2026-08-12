@@ -34,6 +34,14 @@ def calculate_shard_size(dim_size: int, chunk_size: int, chunks_per_shard: int) 
     return actual_chunks_per_shard * chunk_size
 
 
+def non_spatial_shard_size(
+    dim_size: int, spatial_shard_bytes: int, max_shard_bytes: int
+) -> int:
+    if dim_size <= 1 or spatial_shard_bytes <= 0:
+        return 1
+    return max(1, min(dim_size, max_shard_bytes // spatial_shard_bytes))
+
+
 def snap_chunk_to_source(
     dim_size: int,
     ideal_chunk: int,

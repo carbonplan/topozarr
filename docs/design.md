@@ -47,6 +47,20 @@ Shards group `chunks_per_shard` chunks per spatial dimension (default 4, i.e.
 4×4 = 16 chunks, ~8 MB). Shards are also the unit of work during generation:
 larger shards mean fewer, bigger reads/writes and more memory per worker.
 
+Non-spatial dimensions use chunk size 1, so each slice can be decoded on its
+own. By default, each slice also occupies a separate shard. Set
+`shard_non_spatial=True` to pack these chunks into fewer shard objects without
+changing how much data a single-slice read decodes.
+
+Packing reduces the number of object keys and shard indexes touched by a
+whole-axis read. It does not change which chunks are selected. HTTP clients such
+as Zarrita may fetch those chunks with separate range requests or coalesce
+nearby ranges, depending on the client configuration.
+
+To keep writes within `DEFAULT_MAX_REGION_BYTES`, topozarr packs only as many
+non-spatial slices as one worker can process together. Coarsening needs a larger
+source region, so coarser levels may pack fewer slices.
+
 When the source dataset is itself chunked (zarr/icechunk/dask), level-0 chunk
 sizes are *snapped* so the destination shard grid nests with the source chunk
 grid (the shard divides the source chunk or is a multiple of it), provided a
@@ -100,6 +114,7 @@ variables within a level stream through one shared pool.
 | `levels` / `factors` | `create_pyramid` | number of levels, or explicit cumulative downsample factors (sparse pyramids) |
 | `target_chunk_bytes` | `create_pyramid` | chunk size on disk |
 | `chunks_per_shard` | `create_pyramid` | shard size = work unit; `None` disables sharding |
+| `shard_non_spatial` | `create_pyramid` | pack non-spatial slices into fewer shards, within the write region budget; default one per shard |
 | `max_region_bytes` | `Pyramid.write` | cap on level-0 region widening |
 | `max_workers` | `Pyramid.write` | thread pool size; `None` = RAM/CPU-derived |
 | `keep_levels_in_memory` | `Pyramid.write` | keep written levels in RAM to skip re-reads; `None` = auto when they fit |

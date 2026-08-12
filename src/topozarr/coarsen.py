@@ -157,6 +157,7 @@ def create_pyramid(
     method: CoarseningMethod = "mean",
     target_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
     chunks_per_shard: ChunksPerShard | None = DEFAULT_CHUNKS_PER_SHARD,
+    shard_non_spatial: bool = False,
     layer_hints: dict[str, ZarrLayerVarConfig] | None = None,
 ) -> Pyramid:
     """Build a multiscale Zarr pyramid plan from a georeferenced Dataset.
@@ -187,6 +188,13 @@ def create_pyramid(
         chunks_per_shard: Number of chunks per shard along each spatial dimension
             (e.g. ``4`` → 4×4 = 16 chunks per shard, ~8 MB). Must be a power
             of 2 in the range 1–32. Pass ``None`` to disable sharding.
+        shard_non_spatial: Pack non-spatial chunks (time, band, ...) into fewer
+            shards. Chunks remain size 1, so single-slice decoding is unchanged.
+            Packing reduces the object keys and shard indexes touched by a
+            whole-axis read, while request coalescing remains reader-dependent.
+            Shards are capped by ``DEFAULT_MAX_REGION_BYTES``; on coarsened
+            levels, the cap is divided by the coarsening step squared to account
+            for the larger input region. Ignored when sharding is disabled.
         layer_hints: Optional per-variable colormap / color-range hints written
             into the ``zarr-layer`` root metadata key.
 
@@ -249,6 +257,8 @@ def create_pyramid(
             target_chunk_bytes=target_chunk_bytes,
             chunks_per_shard=chunks_per_shard,
             source_chunks=level0_source_chunks if idx == 0 else None,
+            shard_non_spatial=shard_non_spatial,
+            coarsen_step=factors[idx] // factors[idx - 1] if idx > 0 else 1,
         )
         for idx, template in level_templates.items()
     }

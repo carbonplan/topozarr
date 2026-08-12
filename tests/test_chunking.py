@@ -163,3 +163,146 @@ def test_calculate_shard_size():
         )
 
         assert shard <= dim_size, f"shard {shard} exceeds dim {dim_size}"
+
+
+def _banded_dataset(nx=1000, ny=1000, nband=6):
+    import numpy as np
+    import xarray as xr
+    import xproj  # noqa: F401
+
+    ds = xr.Dataset(
+        {
+            "elevation": (
+                ("band", "y", "x"),
+                # broadcast the band axis (stride 0) so large band counts
+                # require no per-band allocation
+                np.broadcast_to(np.random.rand(ny, nx).astype("f4"), (nband, ny, nx)),
+            )
+        },
+        coords={
+            "band": np.arange(nband),
+            "x": np.linspace(0, nx - 1, nx),
+            "y": np.linspace(0, ny - 1, ny),
+        },
+    )
+    return ds.proj.assign_crs(spatial_ref="EPSG:4326")
+
+
+def test_non_spatial_shard_defaults_to_one():
+    from topozarr.coarsen import create_pyramid
+
+    enc = create_pyramid(_banded_dataset(), levels=1).encoding["/0"]["elevation"]
+    assert enc["chunks"][0] == 1
+    assert enc["shards"][0] == 1
+
+
+def test_non_spatial_shard_groups_slices():
+    from topozarr.coarsen import create_pyramid
+
+    enc = create_pyramid(
+        _banded_dataset(nband=6), levels=1, shard_non_spatial=True
+    ).encoding["/0"]["elevation"]
+    # chunking is untouched: one slice still decodes alone
+    assert enc["chunks"][0] == 1
+    # but all six slices now live in one shard
+    assert enc["shards"][0] == 6
+
+
+def test_non_spatial_shard_bounded_by_region_budget():
+    from topozarr.chunking import non_spatial_shard_size
+    from topozarr.coarsen import create_pyramid
+    from topozarr.engine import DEFAULT_MAX_REGION_BYTES
+
+    nband = 256
+    ds = _banded_dataset(nband=nband)
+    spatial = create_pyramid(ds, levels=1).encoding["/0"]["elevation"]["shards"]
+    one_slice = spatial[1] * spatial[2] * 4
+
+    enc = create_pyramid(ds, levels=1, shard_non_spatial=True).encoding["/0"][
+        "elevation"
+    ]
+    # an axis too long to group whole is grouped partway, not blown up
+    assert 1 < enc["shards"][0] < nband
+    assert enc["shards"][0] == non_spatial_shard_size(
+        nband, one_slice, DEFAULT_MAX_REGION_BYTES
+    )
+    assert enc["shards"][0] * one_slice <= DEFAULT_MAX_REGION_BYTES
+
+
+def test_non_spatial_shard_budget_shrinks_on_coarsened_levels():
+    from topozarr.chunking import non_spatial_shard_size
+    from topozarr.coarsen import create_pyramid
+    from topozarr.engine import DEFAULT_MAX_REGION_BYTES
+
+    step = 4
+    enc = create_pyramid(
+        _banded_dataset(nband=256), factors=[1, step], shard_non_spatial=True
+    ).encoding["/1"]["elevation"]
+    one_slice = enc["shards"][1] * enc["shards"][2] * 4
+    # producing a level-1 shard reads a step**2-larger region from level 0,
+    # so fewer slices are grouped than the raw budget would allow
+    budget = DEFAULT_MAX_REGION_BYTES // step**2
+    assert enc["shards"][0] == non_spatial_shard_size(256, one_slice, budget)
+    assert enc["shards"][0] < non_spatial_shard_size(
+        256, one_slice, DEFAULT_MAX_REGION_BYTES
+    )
+
+
+def test_non_spatial_dimensions_share_region_budget():
+    from topozarr.chunking import non_spatial_shard_size
+    from topozarr.coarsen import create_pyramid
+    from topozarr.engine import DEFAULT_MAX_REGION_BYTES
+
+    size = 16
+    ds = _banded_dataset(nband=size).expand_dims(time=range(size))
+    enc = create_pyramid(ds, levels=1, shard_non_spatial=True).encoding["/0"][
+        "elevation"
+    ]
+    one_slice = enc["shards"][2] * enc["shards"][3] * 4
+    time_shard = non_spatial_shard_size(size, one_slice, DEFAULT_MAX_REGION_BYTES)
+    band_shard = non_spatial_shard_size(
+        size, one_slice * time_shard, DEFAULT_MAX_REGION_BYTES
+    )
+
+    assert enc["shards"][:2] == (time_shard, band_shard)
+    assert time_shard * band_shard * one_slice <= DEFAULT_MAX_REGION_BYTES
+
+
+def test_non_spatial_shard_ignored_without_sharding():
+    from topozarr.coarsen import create_pyramid
+
+    enc = create_pyramid(
+        _banded_dataset(),
+        levels=1,
+        chunks_per_shard=None,
+        shard_non_spatial=True,
+    ).encoding["/0"]["elevation"]
+    assert "shards" not in enc
+
+
+def test_non_spatial_shard_size_helper():
+    from topozarr.chunking import non_spatial_shard_size
+
+    assert non_spatial_shard_size(6, 1000, 10_000) == 6  # whole axis fits
+    assert non_spatial_shard_size(6, 1000, 3_000) == 3  # budget caps it
+    assert non_spatial_shard_size(6, 1000, 10) == 1  # never below one
+    assert non_spatial_shard_size(1, 1000, 10_000) == 1  # degenerate axis
+
+
+def test_banded_pyramid_roundtrip_matches_encoding():
+    import numpy as np
+    import zarr
+
+    from topozarr.coarsen import create_pyramid
+
+    ds = _banded_dataset(nx=512, ny=512, nband=6)
+    pyramid = create_pyramid(ds, levels=2, shard_non_spatial=True)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store, mode="w")
+    root = zarr.open_group(store, mode="r")
+    for level, var_encs in pyramid.encoding.items():
+        group = root[level.lstrip("/")]
+        for var, enc in var_encs.items():
+            assert group[var].chunks == enc["chunks"]
+            assert group[var].shards == enc["shards"]
+    np.testing.assert_array_equal(root["0/elevation"][:], ds.elevation.values)
