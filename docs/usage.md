@@ -106,6 +106,23 @@ The heuristics target ~500 KB chunks for web visualization. Tune shard size with
 
 Pass `chunks_per_shard=None` to disable sharding entirely.
 
+### Non-spatial dimensions
+
+`chunks_per_shard` also sets a shard byte budget. Spatial dimensions are sized first; whatever is left over widens non-spatial dimensions (`time`, `band`, ...) instead of leaving them at one element per shard. Chunk size along those dimensions stays 1, so reads still fetch a single element.
+
+To override, edit `pyramid.encoding` before writing. Chunk and shard values are plain tuples in dimension order, so use `.dims` to find the axis — it differs between variables:
+
+```python
+enc = pyramid.encoding["/0"]["wind_speed"]
+axis = pyramid.level_templates[0]["wind_speed"].dims.index("time")
+
+shards = list(enc["shards"])
+shards[axis] = 1  # one timestep per shard
+enc["shards"] = tuple(shards)
+```
+
+Repeat per level and variable. Zarr requires each shard to be a whole multiple of its chunk.
+
 ## Writing backends
 
 `pyramid.write` accepts anything `zarr-python` can open — a local path, an `ObjectStore`, or an icechunk session store.

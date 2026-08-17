@@ -187,6 +187,14 @@ def create_pyramid(
         chunks_per_shard: Number of chunks per shard along each spatial dimension
             (e.g. ``4`` → 4×4 = 16 chunks per shard, ~8 MB). Must be a power
             of 2 in the range 1–32. Pass ``None`` to disable sharding.
+
+            This also sets the shard byte budget. Spatial dims are sized
+            first; when they cannot use the whole budget (a small raster, or a
+            coarse pyramid level), the remainder widens non-spatial dims such
+            as ``time`` or ``band`` instead of leaving them at a
+            single element. Chunks along those dims stay at 1, so reads still
+            fetch one element at a time. Edit ``pyramid.encoding`` before
+            writing to override.
         layer_hints: Optional per-variable colormap / color-range hints written
             into the ``zarr-layer`` root metadata key.
 
