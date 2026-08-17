@@ -222,7 +222,6 @@ class Pyramid:
         progress: bool = False,
         stats: bool = False,
         keep_levels_in_memory: bool | None = None,
-        io: Literal["python", "rust"] = "python",
     ) -> dict[str, Any] | None:
         """Compute and write pyramid levels to a Zarr store.
 
@@ -270,15 +269,6 @@ class Pyramid:
                 ``True`` forces fusion and raises ``MemoryError`` if the budget
                 is exceeded.  ``False`` disables fusion and always re-reads from
                 the store.
-            io: ``"python"`` (default) writes everything through zarr-python.
-                ``"rust"`` encodes and stores spatial-variable regions natively
-                in the ``topozarr-core`` kernel (a bundled Rust extension, no
-                extra install) -- one shared connection pool, no per-region trip
-                through zarr-python's sync bridge. Metadata, coords, and
-                non-spatial variables still go through zarr-python. Supports
-                local paths, ``s3://`` URLs, ``LocalStore``, and obstore-backed
-                ``ObjectStore`` targets. This is unrelated to the optional
-                ``zarrs`` codec pipeline (a separate zarr-python codec backend).
         Examples:
             Write all levels to a local store:
 
@@ -303,9 +293,6 @@ class Pyramid:
             list(range(self.levels)) if levels is None else sorted(set(levels))
         )
         spatial_vars = self._spatial_vars()
-
-        if io not in ("python", "rust"):
-            raise ValueError(f"io must be 'python' or 'rust', got {io!r}")
 
         if mode == "w" and set(write_levels) != set(self.level_templates):
             # mode="w" truncates the store, so a partial write over existing
@@ -352,12 +339,6 @@ class Pyramid:
                     "or write it first"
                 )
         root.attrs.update(self.attrs)
-
-        rust_writer = None
-        if io == "rust":
-            from .rust_io import make_rust_writer
-
-            rust_writer = make_rust_writer(store)
 
         all_stats: dict[str, Any] = {}
         try:
@@ -407,14 +388,10 @@ class Pyramid:
                             mem_source=mem_levels.get(name),
                             next_level_arr=next_mem.get(name),
                             next_level_stride=next_stride.get(name),
-                            rust_writer=rust_writer,
                         )
                     ]
                     for future in futures:
                         future.result()
-
-                if rust_writer is not None:
-                    rust_writer.flush()
 
                 mem_levels = next_mem
 
@@ -428,26 +405,9 @@ class Pyramid:
                         "wall_s": round(perf_counter() - t_level, 3),
                         **timer.as_dict(),
                     }
-        except BaseException:
-            # await any in-flight rust PUTs so no upload lands after the
-            # error surfaces; flush failures must not mask the original
-            if rust_writer is not None:
-                try:
-                    rust_writer.flush()
-                except Exception:
-                    pass
-            raise
         finally:
             if pbar is not None:
                 pbar.close()
-        if stats and rust_writer is not None:
-            # cumulative across all levels; seconds summed over threads/tasks.
-            # write_s is worker-thread encode time; on S3, PUTs run async and
-            # overlap encode, so put_s is reported separately (not subtracted)
-            # and encode_s == write_s.
-            rust_stats = dict(rust_writer.stats())
-            rust_stats["encode_s"] = round(rust_stats["write_s"], 3)
-            all_stats["rust_io"] = rust_stats
         return all_stats if stats else None
 
     def _fusion_buffers(
@@ -513,7 +473,6 @@ class Pyramid:
         mem_source: np.ndarray | None = None,
         next_level_arr: np.ndarray | None = None,
         next_level_stride: tuple[int, ...] | None = None,
-        rust_writer: Any | None = None,
     ) -> list[Future[None]]:
         template_da = self.level_templates[lvl][name]
         source_da = self.source[name]
@@ -543,13 +502,6 @@ class Pyramid:
                 next_level_arr, next_level_stride, self.method, fill
             )
 
-        write_region = None
-        if rust_writer is not None:
-            node_path = f"/{dst.path}"
-
-            def write_region(region: Region, block: np.ndarray) -> None:
-                rust_writer.write_region(node_path, [s.start for s in region], block)
-
         if lvl == 0 or mem_source is not None:
             values: Any = mem_source if mem_source is not None else source_da.variable
             sc = None if mem_source is not None else source_chunks(source_da)
@@ -562,7 +514,6 @@ class Pyramid:
                 on_region=on_region,
                 on_block=on_block,
                 timer=timer,
-                write_region=write_region,
             )
 
         step = self._step(lvl)
@@ -578,7 +529,6 @@ class Pyramid:
             executor=executor,
             on_region=on_region,
             timer=timer,
-            write_region=write_region,
         )
 
     def _coarsen_chain(self) -> list[xr.Dataset]:

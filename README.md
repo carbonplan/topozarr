@@ -68,7 +68,7 @@ pyramid.write("pyramid.zarr")
 
 Full docs at **[carbonplan.github.io/topozarr](https://carbonplan.github.io/topozarr/)**:
 
-- [Usage](https://carbonplan.github.io/topozarr/usage/) — sparse pyramids (`factors`), visualization hints (`layer_hints`), chunking and sharding (and why sharding rules), object-storage / Icechunk backends, and the experimental `io="rust"` write path.
+- [Usage](https://carbonplan.github.io/topozarr/usage/) — sparse pyramids (`factors`), visualization hints (`layer_hints`), chunking and sharding (and why sharding rules), and object-storage / Icechunk backends.
 - [Design](https://carbonplan.github.io/topozarr/design/) — the plan/execute split, chunk and shard heuristics, streaming memory model, and Rust kernel semantics.
 
 ## Contributing

@@ -145,15 +145,3 @@ session = repo.writable_session("main")
 pyramid.write(session.store, mode="w")
 session.commit("write pyramid")
 ```
-
-## Experimental: Rust write path
-
-Passing `io="rust"` writes through Rust using the Zarrs crate instead of `zarr-python` (no extra install):
-
-```python
-pyramid.write("s3://bucket/pyramid.zarr", io="rust")
-```
-
-Often faster on object stores (~25% on S3 in our benchmarks). Supports local paths, `s3://` URLs, `LocalStore`, and obstore-backed `ObjectStore` targets.
-
-**Experimental:** the API may change.

@@ -6,8 +6,6 @@ use numpy::{
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
-mod writer;
-
 #[derive(Clone, Copy, PartialEq)]
 enum Method {
     Mean,
@@ -235,7 +233,6 @@ fn block_reduce<'py>(
 #[pymodule]
 fn topozarr_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(block_reduce, m)?)?;
-    m.add_class::<writer::RustWriter>()?;
     Ok(())
 }
 
