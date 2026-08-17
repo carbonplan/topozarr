@@ -2,14 +2,12 @@
 
 ## 0.1.5
 
-### Changed
-
 - Chunking/sharding heuristics now take into account the non-spatial dimensions
   (`time`, `band`, ...). If there is available 'space', then shards can include
   more chunks-per-shard for non-spatial dims. You can still specify your own encoding by editing
   `pyramid.encoding` before writing.
 
-- The experimental `io="rust"` write path (`Pyramid.write(..., io="rust")`) and the
+- Removed the experimental `io="rust"` write path (`Pyramid.write(..., io="rust")`) and the
   `RustWriter` class in `topozarr-core`. It wrote regions through the `zarrs` crate
   instead of zarr-python for **roughly** a 25% gain on S3, which did not justify carrying a
   second write path, a store-URL translation layer, and four heavy Rust dependencies.
