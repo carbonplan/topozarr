@@ -38,11 +38,31 @@ Spatial dimensions aim for square chunks of `target_chunk_bytes` (default
 ~500 KB, sized for web visualization): the ideal chunk dim is
 `sqrt(target_chunk_bytes / itemsize)` with a floor of 128, then evened out so
 chunks divide the dimension as uniformly as possible. Non-spatial dimensions
-(time, band, ...) always get chunk size 1.
+(time, band, ...) always get chunk size 1; only their *shard* extent varies.
 
 Shards group `chunks_per_shard` chunks per spatial dimension (default 4, i.e.
 4×4 = 16 chunks, ~8 MB). Shards are also the unit of work during generation:
 larger shards mean fewer, bigger reads/writes and more memory per worker.
+
+`chunks_per_shard` sets a shard *byte budget* as well. A spatial dimension can
+only hold as many chunks as fit whole, so a small raster — or any sufficiently
+coarse pyramid level — leaves part of that budget unspent. The remainder widens
+non-spatial dimensions instead of being discarded, innermost first, bounded by
+each dimension's extent. Chunk size along those dimensions stays 1, so a reader
+still fetches a single element rather than the whole group.
+
+This makes the priority emergent rather than hardcoded: spatial dimensions are
+sized first and non-spatial ones only ever receive what is left, so a large
+raster (where spatial saturates the budget) is unaffected. It also lines up with
+CF dimension order (`T, Z, Y, X`) without inspecting dimension names — `time` is
+outermost, so fixed-cardinality dimensions like `band` or `return_period` pack
+before it.
+
+Bytes alone are not a sufficient bound. A shard index costs 16 bytes per inner
+chunk no matter how small those chunks are, so at coarse levels the byte budget
+would admit thousands of single-element chunks and the index fetch would come to
+dominate the chunk it locates. The inner chunk count per shard is therefore
+capped at `MAX_INNER_CHUNKS` (128), holding the index near 2 KB.
 
 When the source dataset is itself chunked (zarr/icechunk/dask), level-0 chunk
 sizes are *snapped* so the destination shard grid nests with the source chunk

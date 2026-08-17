@@ -13,6 +13,7 @@ from .chunking import (
     ChunksPerShard,
     calculate_chunk_size,
     calculate_shard_size,
+    fill_nonspatial_shards,
     get_ideal_dim,
     snap_chunk_to_source,
 )
@@ -115,11 +116,24 @@ def _create_var_encoding(
         if shards is not None and chunks_per_shard is not None:
             shards[idx] = calculate_shard_size(da.shape[idx], c, chunks_per_shard)
 
+    nonspatial_idx = []
     for i, dim in enumerate(da.dims):
         if dim not in [x_dim, y_dim]:
+            nonspatial_idx.append(i)
             chunks[i] = 1
             if shards is not None:
                 shards[i] = 1
+
+    if shards is not None and chunks_per_shard is not None:
+        shards = fill_nonspatial_shards(
+            shards,
+            chunks,
+            da.shape,
+            nonspatial_idx,
+            itemsize,
+            target_chunk_bytes,
+            chunks_per_shard,
+        )
 
     var_encoding = {"chunks": tuple(chunks)}
     if shards is not None:
