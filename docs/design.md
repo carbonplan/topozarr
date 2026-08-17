@@ -21,16 +21,13 @@ The level structure comes from either `levels` (dense `[1, 2, 4, ...]` factors)
 or `factors` (explicit cumulative downsample factors, e.g. `[1, 4, 16]` for a
 sparse pyramid). Either way the plan is the same shape.
 
-There are three ways to materialize the plan:
+There are two ways to materialize the plan:
 
 - **`Pyramid.write`** (default): level 0 is streamed from the source dataset,
   then each level `N` is block-reduced from the already-written level `N - 1`
   through the Rust kernel (`topozarr_core.block_reduce`), so the source is read
   exactly once regardless of the number of levels. Work runs on a local thread
   pool (not Dask). The rest of this document describes this path.
-- **`Pyramid.write(..., io="rust")`**: same streaming model, but spatial-variable
-  regions are encoded and stored natively in the Rust kernel instead of through
-  zarr-python — often faster on object stores.
 - **`Pyramid.as_datatree`**: returns a lazy `xr.DataTree` (levels coarsened via
   `xarray.coarsen`) for Dask-distributed writes. You call `to_zarr` yourself,
   passing `pyramid.encoding`.
@@ -103,5 +100,4 @@ variables within a level stream through one shared pool.
 | `max_region_bytes` | `Pyramid.write` | cap on level-0 region widening |
 | `max_workers` | `Pyramid.write` | thread pool size; `None` = RAM/CPU-derived |
 | `keep_levels_in_memory` | `Pyramid.write` | keep written levels in RAM to skip re-reads; `None` = auto when they fit |
-| `io` | `Pyramid.write` | `"python"` (default) or `"rust"` native write path |
 | `progress` | `Pyramid.write` | tqdm bar over written regions |

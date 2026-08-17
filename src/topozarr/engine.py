@@ -116,7 +116,6 @@ def _write_regions(
     on_block: Callable[[Region, np.ndarray], None] | None = None,
     timer: RegionTimer | None = None,
     skip_empty: bool = True,
-    write_region: Callable[[Region, np.ndarray], None] | None = None,
 ) -> list[Future[None]]:
     """Write every region of ``dst`` via ``get_block`` on a thread pool.
 
@@ -136,10 +135,6 @@ def _write_regions(
     this avoids zarr's delete-on-empty-chunk behavior, which issues a store
     delete per all-fill shard even on a fresh array. Disable when ``dst``
     may hold stale data that an all-fill write should clear.
-
-    ``write_region``, if provided, replaces ``dst[region] = block`` as the
-    store step (e.g. the Rust writer); ``dst`` is still used for the region
-    grid and fill value.
     """
     fill_value = dst.fill_value
 
@@ -152,10 +147,7 @@ def _write_regions(
         t2 = perf_counter()
         skipped = skip_empty and _is_all_fill(block, fill_value)
         if not skipped:
-            if write_region is not None:
-                write_region(region, block)
-            else:
-                dst[region] = block
+            dst[region] = block
         if timer is not None:
             fused_s = (t2 - t1) if on_block is not None else 0.0
             timer.add(
@@ -210,7 +202,6 @@ def copy_array(
     on_block: Callable[[Region, np.ndarray], None] | None = None,
     timer: RegionTimer | None = None,
     skip_empty: bool = True,
-    write_region: Callable[[Region, np.ndarray], None] | None = None,
 ) -> list[Future[None]]:
     """Write a region-indexable array into ``dst`` region by region.
 
@@ -250,7 +241,6 @@ def copy_array(
         on_block=on_block,
         timer=timer,
         skip_empty=skip_empty,
-        write_region=write_region,
     )
 
 
@@ -267,7 +257,6 @@ def downsample_level(
     on_region: Callable[[], None] | None = None,
     timer: RegionTimer | None = None,
     skip_empty: bool = True,
-    write_region: Callable[[Region, np.ndarray], None] | None = None,
 ) -> list[Future[None]]:
     """Block-reduce ``src`` into ``dst`` by integer ``stride`` per axis.
 
@@ -301,5 +290,4 @@ def downsample_level(
         on_region=on_region,
         timer=timer,
         skip_empty=skip_empty,
-        write_region=write_region,
     )
