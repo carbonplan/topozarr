@@ -14,6 +14,7 @@ import zarr
 import zarr.errors
 from topozarr_core import block_reduce
 
+from .chunking import source_chunks
 from .engine import (
     DEFAULT_MAX_REGION_BYTES,
     REGION_MEM_FACTOR,
@@ -63,18 +64,6 @@ def _progress_bar(total: int) -> Any:
             "progress=True requires tqdm; install it with `pip install tqdm`"
         ) from err
     return tqdm(total=total, unit="region")
-
-
-def source_chunks(da: xr.DataArray) -> tuple[int, ...] | None:
-    """Per-axis chunk shape of the source backing ``da``, if chunked.
-
-    Uses the first chunk per axis; irregular dask chunking only degrades the
-    region-widening heuristic (extra reads), never correctness.
-    """
-    if da.chunks is not None:  # dask
-        return tuple(c[0] for c in da.chunks)
-    enc = da.encoding.get("chunks")  # zarr/icechunk backend
-    return tuple(enc) if enc is not None else None
 
 
 def _to_python(obj: Any) -> Any:

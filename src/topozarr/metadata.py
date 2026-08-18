@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 import xarray as xr
+import xproj  # noqa: F401 - registers .proj accessor
 from pyproj import CRS
 
 from .chunking import (
@@ -16,6 +17,8 @@ from .chunking import (
     fill_nonspatial_shards,
     get_ideal_dim,
     snap_chunk_to_source,
+    source_chunks,
+    validate_chunks_per_shard,
 )
 
 MULTISCALES_CONVENTION = {
@@ -41,6 +44,16 @@ SPATIAL_CONVENTION = {
     "name": "spatial",
     "description": "Spatial coordinate information",
 }
+
+
+def get_crs(ds: xr.Dataset) -> str:
+    crs = ds.proj.crs
+    if not crs:
+        raise ValueError(
+            "dataset is missing a crs. Assign one with xproj, "
+            'e.g. ds.proj.assign_crs(spatial_ref="EPSG:4326").'
+        )
+    return str(crs)
 
 
 @dataclass
@@ -140,6 +153,107 @@ def _create_var_encoding(
         var_encoding["shards"] = tuple(shards)
 
     return var_encoding
+
+
+def _spatial_source_chunks(
+    ds: xr.Dataset, x_dim: str, y_dim: str
+) -> dict[str, int] | None:
+    """Source chunk size per spatial dim, if all spatial vars agree."""
+    sizes: dict[str, set[int]] = {x_dim: set(), y_dim: set()}
+    for da in ds.data_vars.values():
+        if not {x_dim, y_dim} <= set(da.dims):
+            continue
+        chunks = source_chunks(da)
+        if chunks is None:
+            return None
+        for dim in (x_dim, y_dim):
+            sizes[dim].add(chunks[da.get_axis_num(dim)])
+    if any(len(s) != 1 for s in sizes.values()):
+        return None
+    return {dim: s.pop() for dim, s in sizes.items()}
+
+
+def recommend_encoding(
+    ds: xr.Dataset,
+    *,
+    x_dim: str = "x",
+    y_dim: str = "y",
+    target_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
+    chunks_per_shard: ChunksPerShard | None = DEFAULT_CHUNKS_PER_SHARD,
+) -> dict[str, dict[str, tuple[int, ...]]]:
+    """Recommended ``chunks`` / ``shards`` for writing ``ds`` as a flat group.
+
+    Same heuristic `create_pyramid` applies per level, exposed for
+    single-resolution datasets. Pass the result straight to
+    ``ds.to_zarr(..., encoding=...)``. No CRS is required — the encoding
+    depends only on shape and dtype.
+
+    Args:
+        ds: Source dataset. Chunking of a chunked source (dask or a zarr
+            backend) is sniffed and the recommendation snapped to nest with it.
+        x_dim: Name of the x (longitude / easting) dimension.
+        y_dim: Name of the y (latitude / northing) dimension.
+        target_chunk_bytes: Target uncompressed size per chunk (default ~500 KB).
+        chunks_per_shard: Number of chunks per shard along each spatial
+            dimension (e.g. ``4`` → 4×4 = 16 chunks per shard, ~8 MB). Must be a
+            power of 2 in the range 1–32. Pass ``None`` to disable sharding.
+
+            This also sets the shard byte budget: whatever the spatial dims
+            leave unused widens non-spatial dims such as ``time`` or ``band``.
+            Chunks along those dims stay at 1.
+
+    Returns:
+        ``{var_name: {"chunks": (...), "shards": (...)}}`` for variables that
+        have both spatial dims; ``"shards"`` is omitted when
+        ``chunks_per_shard`` is ``None``. Non-spatial variables are absent and
+        fall through to xarray's defaults.
+
+    Raises:
+        ValueError: If ``chunks_per_shard`` is not a power of 2 in the range
+            1–32, ``x_dim`` or ``y_dim`` is not a dimension of ``ds``, or no
+            data variable has both spatial dimensions.
+
+    Examples:
+        ```python
+        from topozarr import attach_geozarr_metadata, recommend_encoding
+
+        ds = attach_geozarr_metadata(ds, x_dim="lon", y_dim="lat")
+        ds.to_zarr(
+            "flat.zarr",
+            zarr_format=3,
+            consolidated=False,
+            encoding=recommend_encoding(ds, x_dim="lon", y_dim="lat"),
+        )
+        ```
+
+    Note:
+        For a dask-backed ``ds``, xarray's ``safe_chunks`` check requires dask
+        blocks to align with the zarr write unit -- the *shard*, when sharding
+        is on. Only spatial chunks are snapped to the source, not shards, so a
+        dask source usually fails this check. Rechunk to the recommended shards
+        before writing, or pass ``safe_chunks=False``. A lazily opened
+        zarr-backed ``ds`` (``chunks=None``) is unaffected.
+    """
+    if chunks_per_shard is not None:
+        validate_chunks_per_shard(chunks_per_shard)
+    if x_dim not in ds.dims:
+        raise ValueError(f"x_dim {x_dim!r} not found in dataset dims {tuple(ds.dims)}")
+    if y_dim not in ds.dims:
+        raise ValueError(f"y_dim {y_dim!r} not found in dataset dims {tuple(ds.dims)}")
+    if not any(x_dim in da.dims and y_dim in da.dims for da in ds.data_vars.values()):
+        raise ValueError(
+            f"no variable has both x_dim {x_dim!r} and y_dim {y_dim!r}; "
+            "nothing to encode"
+        )
+
+    return create_level_encoding(
+        ds,
+        x_dim,
+        y_dim,
+        target_chunk_bytes=target_chunk_bytes,
+        chunks_per_shard=chunks_per_shard,
+        source_chunks=_spatial_source_chunks(ds, x_dim, y_dim),
+    )
 
 
 def _coord_resolution(values: np.ndarray, dim: str, fallback: float | None) -> float:

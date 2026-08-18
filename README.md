@@ -64,6 +64,22 @@ pyramid.write("pyramid.zarr")
 
 `create_pyramid` returns a write plan; `pyramid.write(store)` does the work.
 
+Not every dataset needs overviews. For a single-resolution (flat) geozarr group,
+`attach_geozarr_metadata` adds the convention attrs and `recommend_encoding`
+gives you the same chunk/shard heuristic to hand to `to_zarr`:
+
+```python
+from topozarr import attach_geozarr_metadata, recommend_encoding
+
+ds = attach_geozarr_metadata(ds, x_dim="lon", y_dim="lat")
+ds.to_zarr(
+    "flat.zarr",
+    zarr_format=3,
+    consolidated=False,
+    encoding=recommend_encoding(ds, x_dim="lon", y_dim="lat"),
+)
+```
+
 ### Documentation
 
 Full docs at **[carbonplan.github.io/topozarr](https://carbonplan.github.io/topozarr/)**:
