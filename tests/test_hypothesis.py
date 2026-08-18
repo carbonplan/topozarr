@@ -5,6 +5,7 @@ import zarr
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
+from topozarr import attach_geozarr_metadata, recommend_encoding
 from topozarr.coarsen import create_pyramid
 
 spatial_names = st.sampled_from(["x", "y", "lon", "lat", "X", "Y"])
@@ -145,3 +146,88 @@ def test_multi_variable_encoding(ds_info, levels):
     for level_idx in range(levels):
         level_encoding = pyramid.encoding[f"/{level_idx}"]
         assert len(level_encoding) == len(ds.data_vars)
+
+
+@st.composite
+def flat_datasets(draw):
+    """Arbitrary single-resolution raster: any dim names, shapes, dtype, extras.
+
+    No CRS and no coarsening, so this reaches shapes `create_pyramid` rejects
+    (single-pixel dims have no resolution to infer a transform from).
+    """
+    x_n = draw(spatial_names)
+    y_n = draw(spatial_names.filter(lambda n: n != x_n))
+    nx, ny = draw(st.integers(1, 64)), draw(st.integers(1, 64))
+    extras = draw(st.dictionaries(extra_names, st.integers(1, 3), max_size=2))
+    dtype = draw(st.sampled_from(["u1", "i2", "f4", "f8"]))
+
+    dims = {**extras, y_n: ny, x_n: nx}
+    ds = xr.Dataset(
+        {"elevation": (tuple(dims), np.zeros(tuple(dims.values()), dtype=dtype))},
+        coords={
+            x_n: np.arange(nx),
+            y_n: np.arange(ny),
+            **{k: np.arange(v) for k, v in extras.items()},
+        },
+    )
+    return ds, x_n, y_n
+
+
+@settings(deadline=2000, max_examples=300)
+@given(
+    ds_info=flat_datasets(),
+    chunks_per_shard=st.sampled_from([None, 1, 2, 4, 8]),
+)
+def test_recommend_encoding_invariants(ds_info, chunks_per_shard):
+    """recommend_encoding output is well-formed and accepted by to_zarr verbatim."""
+    ds, x_dim, y_dim = ds_info
+    enc = recommend_encoding(
+        ds, x_dim=x_dim, y_dim=y_dim, chunks_per_shard=chunks_per_shard
+    )
+
+    assert set(enc) == {"elevation"}
+    da = ds.elevation
+    chunks = enc["elevation"]["chunks"]
+    assert len(chunks) == da.ndim
+    assert all(1 <= c <= s for c, s in zip(chunks, da.shape))
+    # chunks stay at 1 along non-spatial dims; only the shard widens them
+    for i, dim in enumerate(da.dims):
+        if dim not in (x_dim, y_dim):
+            assert chunks[i] == 1
+
+    if chunks_per_shard is None:
+        assert "shards" not in enc["elevation"]
+    else:
+        shards = enc["elevation"]["shards"]
+        assert len(shards) == da.ndim
+        assert all(s % c == 0 for s, c in zip(shards, chunks))
+        assert all(s <= dim for s, dim in zip(shards, da.shape))
+
+    store = zarr.storage.MemoryStore()
+    ds.to_zarr(store, zarr_format=3, consolidated=False, encoding=enc)
+    arr = zarr.open_group(store, mode="r")["elevation"]
+    assert arr.chunks == chunks
+    assert arr.shards == enc["elevation"].get("shards")
+
+
+@settings(deadline=2000)
+@given(ds_info=flat_datasets())
+def test_flat_geozarr_attrs_invariants(ds_info):
+    """attach_geozarr_metadata describes the grid and adds no multiscales."""
+    ds, x_dim, y_dim = ds_info
+    ds = ds.proj.assign_crs(spatial_ref="EPSG:4326")
+
+    if min(ds.sizes[x_dim], ds.sizes[y_dim]) == 1:
+        # single-pixel dim: no spacing to derive a transform from, same as
+        # create_pyramid. recommend_encoding still works on these.
+        with pytest.raises(ValueError, match="cannot infer resolution"):
+            attach_geozarr_metadata(ds, x_dim=x_dim, y_dim=y_dim)
+        return
+
+    attrs = attach_geozarr_metadata(ds, x_dim=x_dim, y_dim=y_dim).attrs
+
+    assert "multiscales" not in attrs
+    assert attrs["spatial:shape"] == [ds.sizes[y_dim], ds.sizes[x_dim]]
+    assert attrs["spatial:dimensions"] == [y_dim, x_dim]
+    xmin, ymin, xmax, ymax = attrs["spatial:bbox"]
+    assert xmin < xmax and ymin < ymax

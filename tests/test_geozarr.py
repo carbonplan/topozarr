@@ -10,6 +10,11 @@ from topozarr import (
     create_pyramid,
     recommend_encoding,
 )
+from topozarr.metadata import (
+    MULTISCALES_CONVENTION,
+    PROJ_CONVENTION,
+    SPATIAL_CONVENTION,
+)
 
 SPEC_KEYS = {
     "zarr_conventions",
@@ -242,3 +247,27 @@ def test_pyramid_level0_encoding_matches_recommend_encoding(
     enc_kwargs = {k: v for k, v in kwargs.items() if k not in ("levels", "factors")}
     pyramid = create_pyramid(ds, **kwargs)
     assert pyramid.encoding["/0"] == recommend_encoding(ds, **enc_kwargs)
+
+
+def test_flat_and_pyramid_root_attrs_agree(create_dataset):
+    """Flat and pyramid roots emit the same geozarr block, modulo multiscales."""
+    ds = create_dataset(nx=16, ny=16)
+    flat = attach_geozarr_metadata(ds).attrs
+    root = create_pyramid(ds, levels=2).attrs
+
+    assert set(root) - set(flat) == {"multiscales"}
+    assert set(flat) - set(root) == set()
+    for key in set(flat) - {"zarr_conventions"}:
+        assert flat[key] == root[key], key
+
+    assert flat["zarr_conventions"] == [PROJ_CONVENTION, SPATIAL_CONVENTION]
+    assert root["zarr_conventions"] == [
+        MULTISCALES_CONVENTION,
+        PROJ_CONVENTION,
+        SPATIAL_CONVENTION,
+    ]
+
+    # root and level 0 share one transform computation
+    layout = root["multiscales"]["layout"]
+    assert layout[0]["spatial:transform"] == root["spatial:transform"]
+    assert layout[0]["spatial:shape"] == root["spatial:shape"]

@@ -315,20 +315,18 @@ def _get_spatial_bbox(
     return [xmin, ymin, xmax, ymax]
 
 
-def create_geozarr_metadata(
+def _geozarr_attrs(
     ds: xr.Dataset,
     x_dim: str,
     y_dim: str,
     crs: str,
-    layer_hints: dict[str, ZarrLayerVarConfig] | None = None,
+    transform: list[float],
+    conventions: list[dict[str, str]],
+    layer_hints: dict[str, ZarrLayerVarConfig] | None,
 ) -> dict[str, Any]:
-    """Geozarr convention attrs (proj + spatial) for a single-level dataset.
-
-    No ``multiscales`` convention or layout; suitable for a flat zarr group.
-    """
-    transform = _get_affine_transform(ds, x_dim, y_dim)
+    """proj + spatial attr block, shared by the flat and multiscale roots."""
     return {
-        "zarr_conventions": [PROJ_CONVENTION, SPATIAL_CONVENTION],
+        "zarr_conventions": conventions,
         "proj:code": crs,
         "proj:wkt2": CRS.from_user_input(crs).to_wkt(),
         "spatial:dimensions": [y_dim, x_dim],
@@ -342,6 +340,28 @@ def create_geozarr_metadata(
             else {}
         ),
     }
+
+
+def create_geozarr_metadata(
+    ds: xr.Dataset,
+    x_dim: str,
+    y_dim: str,
+    crs: str,
+    layer_hints: dict[str, ZarrLayerVarConfig] | None = None,
+) -> dict[str, Any]:
+    """Geozarr convention attrs (proj + spatial) for a single-level dataset.
+
+    No ``multiscales`` convention or layout; suitable for a flat zarr group.
+    """
+    return _geozarr_attrs(
+        ds,
+        x_dim,
+        y_dim,
+        crs,
+        _get_affine_transform(ds, x_dim, y_dim),
+        [PROJ_CONVENTION, SPATIAL_CONVENTION],
+        layer_hints,
+    )
 
 
 def create_multiscale_metadata(
@@ -403,11 +423,14 @@ def create_multiscale_metadata(
 
     # ref: https://github.com/zarr-conventions/multiscales/blob/main/examples/geospatial-pyramid.json
 
-    attrs = create_geozarr_metadata(ds, x_dim, y_dim, crs, layer_hints)
-    attrs["zarr_conventions"] = [
-        MULTISCALES_CONVENTION,
-        PROJ_CONVENTION,
-        SPATIAL_CONVENTION,
-    ]
+    attrs = _geozarr_attrs(
+        ds,
+        x_dim,
+        y_dim,
+        crs,
+        root_transform,
+        [MULTISCALES_CONVENTION, PROJ_CONVENTION, SPATIAL_CONVENTION],
+        layer_hints,
+    )
     attrs["multiscales"] = {"layout": layout, "resampling_method": method}
     return attrs
