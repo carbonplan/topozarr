@@ -4,6 +4,8 @@ import math
 from collections.abc import Sequence
 from typing import Literal
 
+import xarray as xr
+
 DEFAULT_CHUNK_BYTES = 512 * 1024
 DEFAULT_CHUNKS_PER_SHARD = 4
 
@@ -129,3 +131,15 @@ def snap_chunk_to_source(
         return None
     # closest to ideal; ties prefer the smaller chunk
     return min(valid, key=lambda c: (abs(c - ideal_chunk), c))
+
+
+def source_chunks(da: xr.DataArray) -> tuple[int, ...] | None:
+    """Per-axis chunk shape of the source backing ``da``, if chunked.
+
+    Uses the first chunk per axis; irregular dask chunking only degrades the
+    region-widening heuristic (extra reads), never correctness.
+    """
+    if da.chunks is not None:  # dask
+        return tuple(c[0] for c in da.chunks)
+    enc = da.encoding.get("chunks")  # zarr/icechunk backend
+    return tuple(enc) if enc is not None else None

@@ -1,5 +1,24 @@
 # Release notes
 
+## Unreleased
+
+### Added
+
+- `recommend_encoding(ds, x_dim=..., y_dim=...)` returns the chunk/shard
+  encoding for a single-resolution (flat) dataset — the same heuristic
+  `create_pyramid` applies per level, previously reachable only as
+  `pyramid.encoding`. Pair it with `attach_geozarr_metadata` and pass the
+  result to `ds.to_zarr(..., encoding=...)`. No CRS required; it covers
+  variables with both spatial dims and leaves the rest to xarray's defaults.
+  `create_pyramid` now builds its per-level encoding through the same
+  function, so pyramid output is unchanged.
+
+  Note for dask-backed datasets: xarray's `safe_chunks` check compares dask
+  blocks against the zarr write unit (the shard, when sharding is on), and the
+  recommendation snaps chunks but not shards. Rechunk to the recommended shards
+  before writing, or pass `safe_chunks=False`. A lazily opened zarr-backed
+  dataset is unaffected.
+
 ## 0.1.5
 
 - Chunking/sharding heuristics now take into account the non-spatial dimensions

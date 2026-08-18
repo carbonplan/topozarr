@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import xarray as xr
 
-from .coarsen import get_crs
-from .metadata import ZarrLayerVarConfig, create_geozarr_metadata
+from .metadata import ZarrLayerVarConfig, create_geozarr_metadata, get_crs
 
 
 def attach_geozarr_metadata(

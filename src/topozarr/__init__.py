@@ -2,7 +2,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from .coarsen import create_pyramid
 from .geozarr import attach_geozarr_metadata
-from .metadata import ZarrLayerVarConfig
+from .metadata import ZarrLayerVarConfig, recommend_encoding
 from .pyramid import CoarseningMethod, Pyramid
 
 try:
@@ -13,6 +13,7 @@ except PackageNotFoundError:
 __all__ = [
     "create_pyramid",
     "attach_geozarr_metadata",
+    "recommend_encoding",
     "Pyramid",
     "CoarseningMethod",
     "ZarrLayerVarConfig",

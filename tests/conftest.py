@@ -56,9 +56,23 @@ def s3_zarr_store(moto_s3_server):
 
 @pytest.fixture
 def create_dataset():
-    def _generate(nx=16, ny=16, x_dim="x", y_dim="y", epsg="EPSG:4326", add_crs=True):
+    def _generate(
+        nx=16,
+        ny=16,
+        x_dim="x",
+        y_dim="y",
+        epsg="EPSG:4326",
+        add_crs=True,
+        extra_dims=None,
+    ):
+        dims = {**(extra_dims or {}), y_dim: ny, x_dim: nx}
         ds = xr.Dataset(
-            {"elevation": ((y_dim, x_dim), np.random.rand(ny, nx).astype("f4"))},
+            {
+                "elevation": (
+                    tuple(dims),
+                    np.random.rand(*dims.values()).astype("f4"),
+                )
+            },
             coords={
                 x_dim: np.linspace(0, nx - 1, nx),
                 y_dim: np.linspace(0, ny - 1, ny),

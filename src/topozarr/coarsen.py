@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import numpy as np
 import xarray as xr
-import xproj  # noqa: F401 - registers .proj accessor
 
 from .chunking import (
     DEFAULT_CHUNK_BYTES,
@@ -12,20 +11,11 @@ from .chunking import (
 )
 from .metadata import (
     ZarrLayerVarConfig,
-    create_level_encoding,
     create_multiscale_metadata,
+    get_crs,
+    recommend_encoding,
 )
-from .pyramid import CoarseningMethod, Pyramid, source_chunks
-
-
-def get_crs(ds: xr.Dataset) -> str:
-    crs = ds.proj.crs
-    if not crs:
-        raise ValueError(
-            "dataset is missing a crs. Assign one with xproj, "
-            'e.g. ds.proj.assign_crs(spatial_ref="EPSG:4326").'
-        )
-    return str(crs)
+from .pyramid import CoarseningMethod, Pyramid
 
 
 def _coarsen_coord(values: np.ndarray, factor: int) -> np.ndarray:
@@ -66,24 +56,6 @@ def _coarsen_template(ds: xr.Dataset, x_dim: str, y_dim: str, step: int) -> xr.D
             data_vars[name] = da
 
     return xr.Dataset(data_vars, coords=coords, attrs=ds.attrs)
-
-
-def _spatial_source_chunks(
-    ds: xr.Dataset, x_dim: str, y_dim: str
-) -> dict[str, int] | None:
-    """Source chunk size per spatial dim, if all spatial vars agree."""
-    sizes: dict[str, set[int]] = {x_dim: set(), y_dim: set()}
-    for da in ds.data_vars.values():
-        if not {x_dim, y_dim} <= set(da.dims):
-            continue
-        chunks = source_chunks(da)
-        if chunks is None:
-            return None
-        for dim in (x_dim, y_dim):
-            sizes[dim].add(chunks[da.get_axis_num(dim)])
-    if any(len(s) != 1 for s in sizes.values()):
-        return None
-    return {dim: s.pop() for dim, s in sizes.items()}
 
 
 def build_level_templates(
@@ -248,15 +220,13 @@ def create_pyramid(
     crs_str = get_crs(ds)
     level_templates = build_level_templates(ds, factors, x_dim, y_dim)
 
-    level0_source_chunks = _spatial_source_chunks(ds, x_dim, y_dim)
     full_encoding = {
-        f"/{idx}": create_level_encoding(
+        f"/{idx}": recommend_encoding(
             template,
-            x_dim,
-            y_dim,
+            x_dim=x_dim,
+            y_dim=y_dim,
             target_chunk_bytes=target_chunk_bytes,
             chunks_per_shard=chunks_per_shard,
-            source_chunks=level0_source_chunks if idx == 0 else None,
         )
         for idx, template in level_templates.items()
     }

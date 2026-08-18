@@ -34,22 +34,53 @@ pyramid = create_pyramid(ds, factors=[1, 4, 16])
 
 Levels are always named sequentially (`0, 1, 2, …`) regardless of `factors`; the downsample factor isn't in the node name but in the multiscales metadata (`layout[i].transform.scale` and each level's `spatial:transform`).
 
-## Metadata only (no pyramid)
+## Single-resolution datasets (no pyramid)
 
-Low-resolution datasets don't need a pyramid. `attach_geozarr_metadata` returns
-the dataset with the geozarr convention attrs (`proj:*`, `spatial:*`,
-`zarr_conventions`) attached — no coarsening, no `/0` nesting, no `multiscales`
-attr. Write it as a flat zarr group yourself:
+Low-resolution datasets don't need a pyramid. Two functions cover the flat path:
+`attach_geozarr_metadata` returns the dataset with the geozarr convention attrs
+(`proj:*`, `spatial:*`, `zarr_conventions`) attached — no coarsening, no `/0`
+nesting, no `multiscales` attr — and `recommend_encoding` returns the same
+chunk/shard heuristic `create_pyramid` applies per level. Write it as a flat
+zarr group yourself:
 
 ```python
-from topozarr import attach_geozarr_metadata
+from topozarr import attach_geozarr_metadata, recommend_encoding
 
 ds = attach_geozarr_metadata(ds, x_dim="lon", y_dim="lat")
-ds.to_zarr("flat.zarr", zarr_format=3, consolidated=False)
+ds.to_zarr(
+    "flat.zarr",
+    zarr_format=3,
+    consolidated=False,
+    encoding=recommend_encoding(ds, x_dim="lon", y_dim="lat"),
+)
 ```
+
+zarr-layer renders a flat group, so this is a real option and not just a
+data-production convenience — but there are no overviews, so a zoomed-out read
+still pulls full resolution.
+
+`create_pyramid(levels=1)` is **not** the way to get a flat dataset: it still
+produces `/0` nesting and a one-entry `multiscales` attr.
 
 CRS is read from the dataset (xproj) or passed explicitly via `crs="EPSG:4326"`.
 Visualization hints work the same as `create_pyramid` via `layer_hints`.
+`recommend_encoding` needs no CRS — the encoding depends only on shape and
+dtype. It covers variables with both spatial dims; anything else falls through
+to xarray's defaults.
+
+For a **dask-backed** dataset, xarray's `safe_chunks` check requires dask blocks
+to align with the zarr write unit — the *shard*, when sharding is on.
+`recommend_encoding` snaps spatial chunks to the source but not shards, so a
+dask source usually fails this check. Rechunk to the recommended shards before
+writing, or pass `safe_chunks=False`:
+
+```python
+enc = recommend_encoding(ds)["elevation"]
+ds = ds.chunk(dict(zip(ds.elevation.dims, enc["shards"])))
+```
+
+A lazily opened zarr-backed dataset (`xr.open_dataset(..., chunks=None)`) is
+unaffected — nothing checks it.
 
 ## Dask distributed
 

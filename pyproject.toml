@@ -40,6 +40,7 @@ tutorial = [
 [dependency-groups]
 test = [
     "boto3>=1.0",
+    "dask>=2026.7.1",
     "hypothesis>=6.150.0",
     "icechunk>=1.1.19",
     "ipdb>=0.13.13",
