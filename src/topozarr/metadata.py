@@ -84,7 +84,7 @@ def create_level_encoding(
     y_dim: str,
     target_chunk_bytes: int = DEFAULT_CHUNK_BYTES,
     chunks_per_shard: ChunksPerShard | None = DEFAULT_CHUNKS_PER_SHARD,
-    source_chunks: dict[str, int] | None = None,
+    source_chunk_sizes: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     spatial_vars = {
         str(var_name): da
@@ -94,7 +94,7 @@ def create_level_encoding(
 
     return {
         var_name: _create_var_encoding(
-            da, x_dim, y_dim, target_chunk_bytes, chunks_per_shard, source_chunks
+            da, x_dim, y_dim, target_chunk_bytes, chunks_per_shard, source_chunk_sizes
         )
         for var_name, da in spatial_vars.items()
     }
@@ -106,7 +106,7 @@ def _create_var_encoding(
     y_dim: str,
     target_chunk_bytes: int,
     chunks_per_shard: ChunksPerShard | None,
-    source_chunks: dict[str, int] | None = None,
+    source_chunk_sizes: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     itemsize = da.dtype.itemsize
     ideal_chunk = get_ideal_dim(itemsize, target_chunk_bytes)
@@ -118,9 +118,12 @@ def _create_var_encoding(
 
     for idx, dim_name in [(y_idx, y_dim), (x_idx, x_dim)]:
         c = None
-        if source_chunks is not None and dim_name in source_chunks:
+        if source_chunk_sizes is not None and dim_name in source_chunk_sizes:
             c = snap_chunk_to_source(
-                da.shape[idx], ideal_chunk, source_chunks[dim_name], chunks_per_shard
+                da.shape[idx],
+                ideal_chunk,
+                source_chunk_sizes[dim_name],
+                chunks_per_shard,
             )
         if c is None:
             c = calculate_chunk_size(da.shape[idx], ideal_chunk)
@@ -252,7 +255,7 @@ def recommend_encoding(
         y_dim,
         target_chunk_bytes=target_chunk_bytes,
         chunks_per_shard=chunks_per_shard,
-        source_chunks=_spatial_source_chunks(ds, x_dim, y_dim),
+        source_chunk_sizes=_spatial_source_chunks(ds, x_dim, y_dim),
     )
 
 
@@ -273,7 +276,9 @@ def _coord_resolution(values: np.ndarray, dim: str, fallback: float | None) -> f
         return float(diffs[0])
     if fallback is None:
         raise ValueError(
-            f"cannot infer resolution of coordinate {dim!r} from a single value"
+            f"cannot infer resolution of coordinate {dim!r} from a single value; "
+            "a size-1 dimension carries no spacing. Use recommend_encoding() for "
+            "chunk/shard encoding, which needs no georeference."
         )
     return fallback
 
