@@ -86,11 +86,15 @@ Visualization hints work the same as `create_pyramid` via `layer_hints`.
 dtype. It covers variables with both spatial dims; anything else falls through
 to xarray's defaults.
 
-For a **dask-backed** dataset, xarray's `safe_chunks` check requires dask blocks
-to align with the zarr write unit — the *shard*, when sharding is on.
-`recommend_encoding` snaps spatial chunks to the source but not shards, so a
-dask source usually fails this check. Rechunk to the recommended shards before
-writing, or pass `safe_chunks=False`:
+For a **dask-backed** dataset, xarray's `safe_chunks` check requires the zarr
+write unit — the *shard*, when sharding is on — to divide the dask block.
+`recommend_encoding` treats `chunks_per_shard` as an upper bound and flexes it
+down until a shard does, so the snippet above writes a dask source as is.
+
+The exception is a source chunk too small to divide into a chunk of usable size
+(under ~128 elements, or under half the ideal chunk). The recommendation keeps a
+read-aligned shard there, and such a write still needs a rechunk or
+`safe_chunks=False`:
 
 ```python
 enc = recommend_encoding(ds)["elevation"]
@@ -115,6 +119,14 @@ handling included. Each coarsen runs on an `f8` promotion to match the kernel's
 accumulator, so a `u1` variable is momentarily 8x its stored size — bounded by
 the dask block, not the array. An `f8` source is the one case the two paths
 differ, by under 1 ULP on `mean`/`sum`.
+
+`pyramid.encoding` is shard-aligned to the source chunking at every level, not
+just level 0, so this writes without `safe_chunks=False` as long as the
+coarsened dask blocks stay large enough to divide into a usable chunk — roughly
+half the ideal chunk size, ~181 elements for `f4` at the default target. Past
+that depth the levels fall out of alignment and need `safe_chunks=False`. A
+2000² `f4` source chunked at 1000 stays aligned for three levels; chunked at
+500 it aligns for two.
 
 ## Progress and memory
 

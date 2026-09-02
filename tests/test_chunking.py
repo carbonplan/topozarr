@@ -1,3 +1,5 @@
+import pytest
+
 from topozarr.chunking import (
     MAX_INNER_CHUNKS,
     calculate_chunk_size,
@@ -103,16 +105,17 @@ def test_disable_sharding(create_dataset):
 
 def test_snap_chunk_divides_source():
     # src chunk 3600, ideal 362, cps 4 → shard 1200 divides 3600, chunk 300
-    c = snap_chunk_to_source(20000, 362, 3600, 4)
-    assert c == 300
-    assert 3600 % (c * 4) == 0
+    c, cps = snap_chunk_to_source(20000, 362, 3600, 4)
+    assert (c, cps) == (300, 4)
+    assert 3600 % (c * cps) == 0
 
 
 def test_snap_chunk_multiple_of_source():
-    # src chunk 100 smaller than shard → shard becomes a multiple of 100
-    c = snap_chunk_to_source(20000, 362, 100, 4)
-    assert c is not None
-    assert (c * 4) % 100 == 0
+    # src chunk 100: no divisor clears the 128 floor at any cps, so this falls
+    # through to the multiple rule at the requested cps
+    c, cps = snap_chunk_to_source(20000, 362, 100, 4)
+    assert cps == 4
+    assert (c * cps) % 100 == 0
     assert 181 <= c <= 724  # within [ideal/2, ideal*2]
 
 
@@ -123,8 +126,8 @@ def test_snap_chunk_no_candidate():
 
 def test_snap_chunk_no_sharding():
     # chunks_per_shard=None snaps the chunk itself
-    c = snap_chunk_to_source(20000, 362, 3600, None)
-    assert c == 360
+    c, cps = snap_chunk_to_source(20000, 362, 3600, None)
+    assert (c, cps) == (360, 1)
     assert 3600 % c == 0
 
 
@@ -132,6 +135,47 @@ def test_snap_chunk_small_dim():
     # dim fits in one chunk → defer to heuristic
     assert snap_chunk_to_source(100, 362, 3600, 4) is None
     assert snap_chunk_to_source(300, 362, 3600, 4) is None
+
+
+# --- chunks_per_shard flexing -------------------------------------------
+#
+# safe_chunks requires the write unit (the shard) to *divide* the dask block.
+# At the requested cps a dividing shard usually does not exist -- the >= 128
+# chunk floor rejects the small divisors -- so cps is an upper bound, flexed
+# down until one does.
+
+
+@pytest.mark.parametrize(
+    "src_chunk,expected",
+    [(500, (250, 2)), (750, (375, 2)), (256, (256, 1)), (1000, (250, 4))],
+)
+def test_snap_chunk_flexes_cps_down(src_chunk, expected):
+    assert snap_chunk_to_source(2000, 362, src_chunk, 4) == expected
+    chunk, cps = expected
+    assert src_chunk % (chunk * cps) == 0  # the shard divides the dask block
+
+
+def test_snap_chunk_never_flexes_up():
+    # cps is an upper bound: a source that would admit a larger shard still
+    # gets the requested one
+    _, cps = snap_chunk_to_source(20000, 362, 3600, 2)
+    assert cps == 2
+
+
+def test_snap_chunk_prefers_divisor_over_multiple():
+    # 500 admits a dividing shard only at cps 2; the old rule would have taken
+    # a multiple at cps 4 instead, which safe_chunks rejects
+    chunk, cps = snap_chunk_to_source(2000, 362, 500, 4)
+    assert 500 % (chunk * cps) == 0
+
+
+def test_snap_chunk_falls_back_to_multiple_when_no_divisor_fits():
+    # src 128: the only divisor >= 128 is 128 itself, outside [181, 724]. The
+    # multiple rule still aligns reads, at the cost of a dask-unsafe shard.
+    chunk, cps = snap_chunk_to_source(2000, 362, 128, 4)
+    assert cps == 4
+    assert (chunk * cps) % 128 == 0
+    assert 128 % (chunk * cps) != 0
 
 
 def test_pyramid_level0_chunks_snap_to_source(create_dataset):
@@ -153,9 +197,13 @@ def test_pyramid_level0_chunks_snap_to_source(create_dataset):
     # level-0 shard nests with the 1000-px source chunks
     for shard in enc0["shards"]:
         assert 1000 % shard == 0 or shard % 1000 == 0
-    # level 1 keeps the pure heuristic (no source chunk info)
+    # level 1 has no source chunking to sniff -- its template is an unchunked
+    # placeholder -- so the 1000-px blocks are carried down by the cumulative
+    # factor instead, and its shard nests with the 500-px blocks it will see
     enc1 = pyramid.encoding["/1"]["elevation"]
-    assert enc1["chunks"][0] == calculate_chunk_size(1000, get_ideal_dim(4, 512 * 1024))
+    assert enc1["chunks"][0] != calculate_chunk_size(1000, get_ideal_dim(4, 512 * 1024))
+    for shard in enc1["shards"]:
+        assert 500 % shard == 0
 
 
 def test_fill_nonspatial_spends_leftover_budget():

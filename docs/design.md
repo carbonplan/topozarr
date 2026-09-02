@@ -69,11 +69,29 @@ would admit thousands of single-element chunks and the index fetch would come to
 dominate the chunk it locates. The inner chunk count per shard is therefore
 capped at `MAX_INNER_CHUNKS` (128), holding the index near 2 KB.
 
-When the source dataset is itself chunked (zarr/icechunk/dask), level-0 chunk
-sizes are *snapped* so the destination shard grid nests with the source chunk
-grid (the shard divides the source chunk or is a multiple of it), provided a
-candidate exists within a factor of 2 of the ideal chunk size. This lets each
-source chunk be decoded exactly once during the level-0 copy.
+When the source dataset is itself chunked (zarr/icechunk/dask), chunk sizes are
+*snapped* so the destination shard grid nests with the source chunk grid,
+provided a candidate exists within a factor of 2 of the ideal chunk size. This
+lets each source chunk be decoded exactly once during the copy.
+
+A shard that *divides* the source chunk is preferred over one that is a multiple
+of it, because that is also what xarray's `safe_chunks` requires of a Dask write:
+the write unit must divide the dask block. A dividing shard rarely exists at the
+requested `chunks_per_shard` — the 128-element chunk floor rejects the small
+divisors — so `chunks_per_shard` is an *upper bound*, flexed down per spatial
+dimension to the largest power of 2 that admits one. Only when no divisor works
+at any of them does it fall back to a multiple, which still reads each source
+chunk once but needs `safe_chunks=False` to write from Dask.
+
+Levels above 0 have nothing to sniff: their templates are unchunked
+placeholders. Their source chunking is derived instead — coarsening a dask array
+by `factor` divides its block sizes by `factor` — so the snapping applies at
+every level. The derivation holds only where the factor divides the block
+evenly; 750 halves to 375 and then splits into (187, 94, 94, …) rather than 187
+across the board, so an indivisible block falls back to the plain heuristic.
+
+Alignment therefore runs out at coarse levels, once the block has shrunk below
+half the ideal chunk size and no dividing shard is left in band.
 
 ## Streaming memory model
 
