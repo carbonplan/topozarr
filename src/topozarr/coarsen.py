@@ -11,11 +11,29 @@ from .chunking import (
 )
 from .metadata import (
     ZarrLayerVarConfig,
+    _spatial_source_chunks,
+    create_level_encoding,
     create_multiscale_metadata,
     get_crs,
     recommend_encoding,
 )
 from .pyramid import CoarseningMethod, Pyramid, validate_method
+
+
+def _level_source_chunks(
+    src_chunks: dict[str, int] | None, factor: int
+) -> dict[str, int] | None:
+    """Source chunk sizes as they appear at a level coarsened by ``factor``.
+
+    ``xarray.coarsen`` divides each dask block by the factor, but only cleanly
+    when the factor divides the block: 750 halves to 375 and then splits into
+    (187, 94, 94, ...) rather than 187 across the board. An indivisible block
+    therefore has no single coarsened size to snap to, and the level falls back
+    to the plain heuristic.
+    """
+    if src_chunks is None or any(c % factor for c in src_chunks.values()):
+        return None
+    return {dim: chunk // factor for dim, chunk in src_chunks.items()}
 
 
 def _coarsen_coord(values: np.ndarray, factor: int) -> np.ndarray:
@@ -234,16 +252,32 @@ def create_pyramid(
     crs_str = get_crs(ds)
     level_templates = build_level_templates(ds, factors, x_dim, y_dim)
 
+    # Level 0 goes through recommend_encoding so the flat and pyramid paths stay
+    # one code path (and one sniff). Coarser levels cannot sniff: their templates
+    # are unchunked placeholders. Their source chunking is derived instead --
+    # coarsening a dask array by `factor` divides its block sizes by `factor` --
+    # so a dask write of as_datatree is shard-aligned at every level, not just 0.
+    src_chunks = _spatial_source_chunks(ds, x_dim, y_dim)
     full_encoding = {
-        f"/{idx}": recommend_encoding(
-            template,
+        "/0": recommend_encoding(
+            level_templates[0],
             x_dim=x_dim,
             y_dim=y_dim,
             target_chunk_bytes=target_chunk_bytes,
             chunks_per_shard=chunks_per_shard,
         )
-        for idx, template in level_templates.items()
     }
+    for idx, template in level_templates.items():
+        if idx == 0:
+            continue
+        full_encoding[f"/{idx}"] = create_level_encoding(
+            template,
+            x_dim,
+            y_dim,
+            target_chunk_bytes=target_chunk_bytes,
+            chunks_per_shard=chunks_per_shard,
+            source_chunk_sizes=_level_source_chunks(src_chunks, factors[idx]),
+        )
 
     attrs = create_multiscale_metadata(
         ds=ds,

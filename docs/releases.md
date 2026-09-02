@@ -37,6 +37,26 @@
   corner-strided them into a mis-registered grid. The error now names the
   coordinates and points at `ds.drop_vars`.
 
+- Chunk/shard recommendations now line up with Dask writes.
+  `ds.to_zarr(encoding=recommend_encoding(ds))` — the snippet in the README, the
+  docs and the docstring — raised `safe_chunks` errors for most dask sources.
+  xarray requires the zarr write unit (the shard, when sharding is on) to
+  *divide* the dask block, and the candidate shards admitted multiples of the
+  source chunk as well as divisors; every multiple fails, and restricting to
+  divisors alone left nothing, since the 128-element chunk floor rejects them.
+
+  `chunks_per_shard` is now an upper bound, flexed down per spatial dimension to
+  the largest power of 2 whose shard divides the source chunk. A multiple is
+  used only when no divisor works at any of them.
+
+  This extends to pyramids: levels above 0 have no source chunking to sniff, so
+  it is derived from the level-0 blocks and the cumulative factor. A
+  `DataTree.to_zarr` of a dask source now writes unaided while the coarsened
+  blocks stay above roughly half the ideal chunk size.
+
+  `pyramid.encoding` therefore moves for chunked sources at every level.
+  Unchunked sources are byte-identical, encoding and data alike.
+
 ### Added
 
 - `recommend_encoding(ds, x_dim=..., y_dim=...)` returns the chunk/shard
@@ -48,11 +68,7 @@
   `create_pyramid` now builds its per-level encoding through the same
   function, so pyramid output is unchanged.
 
-  Note for dask-backed datasets: xarray's `safe_chunks` check compares dask
-  blocks against the zarr write unit (the shard, when sharding is on), and the
-  recommendation snaps chunks but not shards. Rechunk to the recommended shards
-  before writing, or pass `safe_chunks=False`. A lazily opened zarr-backed
-  dataset is unaffected.
+  Dask-backed datasets write unaided as of the `safe_chunks` fix above.
 
 ## 0.1.5
 

@@ -175,14 +175,37 @@ def test_recommend_encoding_ignores_disagreeing_source_chunks(create_dataset):
     )
 
 
-def test_recommend_encoding_dask_source_needs_shard_aligned_chunks(create_dataset):
-    """safe_chunks compares dask blocks to the shard, so dask needs a rechunk.
+@pytest.mark.parametrize("src_chunk", [500, 750, 256, 1000])
+def test_recommend_encoding_dask_source_writes_unaided(create_dataset, src_chunk):
+    """The headline snippet works on a dask source, no safe_chunks=False.
 
-    Pins the caveat the docstring documents: snapping aligns chunks, not
-    shards, so writing a dask-backed dataset with the recommendation as-is
-    raises unless the source is rechunked to the shards first.
+    safe_chunks compares dask blocks to the zarr write unit -- the shard, when
+    sharding is on -- and requires the shard to divide the block. chunks_per_shard
+    is flexed down until one does.
     """
-    ds = create_dataset(nx=2000, ny=2000, add_crs=False).chunk({"y": 750, "x": 750})
+    ds = create_dataset(nx=2000, ny=2000, add_crs=False).chunk(
+        {"y": src_chunk, "x": src_chunk}
+    )
+    enc = recommend_encoding(ds)
+    shards = enc["elevation"]["shards"]
+    assert all(src_chunk % s == 0 for s in shards)
+
+    ds.to_zarr(
+        zarr.storage.MemoryStore(), zarr_format=3, consolidated=False, encoding=enc
+    )
+
+
+def test_recommend_encoding_dask_source_unalignable_still_needs_escape_hatch(
+    create_dataset,
+):
+    """A source chunk too small to divide into a >= 128 chunk keeps the old rule.
+
+    128 admits no dividing shard in the [ideal/2, ideal*2] band at any
+    chunks_per_shard, so the recommendation falls back to a shard that is a
+    *multiple* of the source chunk: reads stay aligned, but a dask write of it
+    needs the escape hatch. Both documented workarounds still apply.
+    """
+    ds = create_dataset(nx=2000, ny=2000, add_crs=False).chunk({"y": 128, "x": 128})
     enc = recommend_encoding(ds)
     shards = enc["elevation"]["shards"]
 
@@ -271,3 +294,85 @@ def test_flat_and_pyramid_root_attrs_agree(create_dataset):
     layout = root["multiscales"]["layout"]
     assert layout[0]["spatial:transform"] == root["spatial:transform"]
     assert layout[0]["spatial:shape"] == root["spatial:shape"]
+
+
+def test_pyramid_write_matches_unchunked_source(create_dataset):
+    """Flexing moves pyramid.encoding for a chunked source; data must not move."""
+    import numpy as np
+
+    from topozarr import create_pyramid
+
+    ds = create_dataset(nx=1000, ny=1000)
+    reference = zarr.storage.MemoryStore()
+    create_pyramid(ds, levels=3).write(reference)
+    ref = zarr.open_group(reference, mode="r")
+
+    chunked = ds.chunk({"y": 500, "x": 500})
+    pyramid = create_pyramid(chunked, levels=3)
+    assert all(500 % s == 0 for s in pyramid.encoding["/0"]["elevation"]["shards"])
+
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+    got = zarr.open_group(store, mode="r")
+    for lvl in range(3):
+        np.testing.assert_array_equal(
+            got[f"{lvl}/elevation"][:], ref[f"{lvl}/elevation"][:]
+        )
+
+
+@pytest.mark.parametrize("src_chunk,levels", [(500, 2), (750, 2), (1000, 3)])
+def test_pyramid_datatree_writes_dask_unaided(create_dataset, src_chunk, levels):
+    """The Dask-distributed path writes with pyramid.encoding, no escape hatch.
+
+    Levels above 0 have no source chunking to sniff -- their templates are
+    unchunked placeholders -- so it is derived from the level-0 blocks and the
+    cumulative factor.
+    """
+    from topozarr import create_pyramid
+
+    ds = create_dataset(nx=2000, ny=2000).chunk({"y": src_chunk, "x": src_chunk})
+    pyramid = create_pyramid(ds, levels=levels)
+
+    for lvl in range(levels):
+        block = src_chunk // 2**lvl
+        for shard in pyramid.encoding[f"/{lvl}"]["elevation"]["shards"]:
+            assert block % shard == 0, f"level {lvl} shard {shard} vs block {block}"
+
+    pyramid.as_datatree().to_zarr(
+        zarr.storage.MemoryStore(),
+        zarr_format=3,
+        consolidated=False,
+        encoding=pyramid.encoding,
+    )
+
+
+def test_pyramid_dask_safety_ends_when_blocks_outrun_the_chunk_band(create_dataset):
+    """Coarse levels can fall out of alignment, and that is not fixable here.
+
+    A shard must divide the dask block, and a chunk must stay within a factor
+    of 2 of the ideal (362 for f4 at the default target, so >= 181). Once
+    coarsening has shrunk the block below that, no dividing shard qualifies:
+    src 500 reaches block 125 at level 2. Such a write needs safe_chunks=False.
+    """
+    from topozarr import create_pyramid
+
+    ds = create_dataset(nx=2000, ny=2000).chunk({"y": 500, "x": 500})
+    pyramid = create_pyramid(ds, levels=3)
+
+    assert all(250 % s == 0 for s in pyramid.encoding["/1"]["elevation"]["shards"])
+    assert not all(125 % s == 0 for s in pyramid.encoding["/2"]["elevation"]["shards"])
+
+    with pytest.raises(ValueError, match="would overlap multiple Dask chunks"):
+        pyramid.as_datatree().to_zarr(
+            zarr.storage.MemoryStore(),
+            zarr_format=3,
+            consolidated=False,
+            encoding=pyramid.encoding,
+        )
+    pyramid.as_datatree().to_zarr(
+        zarr.storage.MemoryStore(),
+        zarr_format=3,
+        consolidated=False,
+        encoding=pyramid.encoding,
+        safe_chunks=False,
+    )

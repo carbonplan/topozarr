@@ -86,40 +86,20 @@ def fill_nonspatial_shards(
     return out
 
 
-def snap_chunk_to_source(
-    dim_size: int,
-    ideal_chunk: int,
-    src_chunk: int,
-    chunks_per_shard: int | None,
-) -> int | None:
-    """Chunk size near ``ideal_chunk`` whose shard (chunk * chunks_per_shard)
-    nests with ``src_chunk``: the shard divides the source chunk or is a
-    multiple of it, so copy regions cover whole source chunks.
+def _divisors(n: int) -> set[int]:
+    out: set[int] = set()
+    for d in range(1, int(math.isqrt(n)) + 1):
+        if n % d == 0:
+            out.update((d, n // d))
+    return out
 
-    Returns None when no candidate chunk lies within [ideal/2, ideal*2] and
-    >= 128 (caller falls back to the plain heuristic).
+
+def _best_chunk(candidates: set[int], cps: int, ideal_chunk: int) -> int | None:
+    """Chunk closest to ``ideal_chunk`` among shard ``candidates``.
+
+    Keeps shards that split evenly into ``cps`` chunks of acceptable size;
+    ties prefer the smaller chunk.
     """
-    # small dims take a single chunk anyway; nothing to snap. src_chunk <= 0
-    # shouldn't occur (callers derive it from real array chunk sizes) but is
-    # guarded defensively since a bogus source chunk would otherwise divide
-    # by zero below.
-    if src_chunk <= 0 or dim_size <= 128 or dim_size <= ideal_chunk:
-        return None
-    cps = chunks_per_shard or 1
-    ideal_shard = ideal_chunk * cps
-
-    # candidate *shard* sizes that nest with the source chunk grid
-    candidates: set[int] = set()
-    # every divisor of src_chunk (found in pairs up to sqrt)
-    for d in range(1, int(math.isqrt(src_chunk)) + 1):
-        if src_chunk % d == 0:
-            candidates.update((d, src_chunk // d))
-    # multiples of src_chunk, up to the first one past 2x the ideal shard
-    # (anything larger cannot yield a chunk within the [ideal/2, ideal*2] band)
-    max_mult = max(1, (2 * ideal_shard) // src_chunk + 1)
-    candidates.update(src_chunk * m for m in range(1, max_mult + 1))
-
-    # keep shards that split evenly into cps chunks of acceptable size
     valid = [
         s // cps
         for s in candidates
@@ -129,8 +109,59 @@ def snap_chunk_to_source(
     ]
     if not valid:
         return None
-    # closest to ideal; ties prefer the smaller chunk
     return min(valid, key=lambda c: (abs(c - ideal_chunk), c))
+
+
+def snap_chunk_to_source(
+    dim_size: int,
+    ideal_chunk: int,
+    src_chunk: int,
+    chunks_per_shard: int | None,
+) -> tuple[int, int] | None:
+    """Chunk size near ``ideal_chunk``, with the chunks-per-shard it needs, whose
+    shard nests with ``src_chunk`` so copy regions cover whole source chunks.
+
+    Prefers a shard that *divides* ``src_chunk``, because that is also what
+    xarray's ``safe_chunks`` requires of a dask write: the write unit must
+    divide the dask block. A dividing shard rarely exists at the requested
+    ``chunks_per_shard`` -- the ``>= 128`` chunk floor rejects the small
+    divisors -- so ``chunks_per_shard`` is treated as an *upper bound* and
+    flexed down to the largest power of 2 that admits one.
+
+    Falls back to the older rule (a shard that is a whole *multiple* of
+    ``src_chunk``, at the requested ``chunks_per_shard``) when no divisor works
+    at any of them. That still reads each source chunk once, but a dask write
+    of it needs ``safe_chunks=False``.
+
+    Returns ``(chunk, chunks_per_shard)``, or None when no candidate chunk lies
+    within [ideal/2, ideal*2] and >= 128 (caller falls back to the plain
+    heuristic).
+    """
+    # small dims take a single chunk anyway; nothing to snap. src_chunk <= 0
+    # shouldn't occur (callers derive it from real array chunk sizes) but is
+    # guarded defensively since a bogus source chunk would otherwise divide
+    # by zero below.
+    if src_chunk <= 0 or dim_size <= 128 or dim_size <= ideal_chunk:
+        return None
+    max_cps = chunks_per_shard or 1
+    divisors = _divisors(src_chunk)
+
+    # dask-safe: shard divides src_chunk. Largest cps first, so an explicit
+    # chunks_per_shard is honored whenever it can be.
+    for cps in sorted(
+        (c for c in VALID_CHUNKS_PER_SHARD if c <= max_cps), reverse=True
+    ):
+        chunk = _best_chunk(divisors, cps, ideal_chunk)
+        if chunk is not None:
+            return chunk, cps
+
+    # read-aligned only: shard is a multiple of src_chunk, up to the first one
+    # past 2x the ideal shard (anything larger cannot yield a chunk in band)
+    ideal_shard = ideal_chunk * max_cps
+    max_mult = max(1, (2 * ideal_shard) // src_chunk + 1)
+    multiples = {src_chunk * m for m in range(1, max_mult + 1)}
+    chunk = _best_chunk(multiples, max_cps, ideal_chunk)
+    return None if chunk is None else (chunk, max_cps)
 
 
 def source_chunks(da: xr.DataArray) -> tuple[int, ...] | None:

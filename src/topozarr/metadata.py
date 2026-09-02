@@ -116,21 +116,31 @@ def _create_var_encoding(
     chunks = list(da.shape)
     shards = list(da.shape) if chunks_per_shard is not None else None
 
+    # snapping may flex chunks_per_shard down per spatial dim (see
+    # snap_chunk_to_source); the effective value drives that dim's shard
+    effective_cps: list[int] = []
     for idx, dim_name in [(y_idx, y_dim), (x_idx, x_dim)]:
-        c = None
+        snapped = None
         if source_chunk_sizes is not None and dim_name in source_chunk_sizes:
-            c = snap_chunk_to_source(
+            snapped = snap_chunk_to_source(
                 da.shape[idx],
                 ideal_chunk,
                 source_chunk_sizes[dim_name],
                 chunks_per_shard,
             )
-        if c is None:
-            c = calculate_chunk_size(da.shape[idx], ideal_chunk)
+        if snapped is None:
+            c, dim_cps = (
+                calculate_chunk_size(da.shape[idx], ideal_chunk),
+                chunks_per_shard,
+            )
+        else:
+            c, dim_cps = snapped
         chunks[idx] = c
+        if dim_cps is not None:
+            effective_cps.append(dim_cps)
 
-        if shards is not None and chunks_per_shard is not None:
-            shards[idx] = calculate_shard_size(da.shape[idx], c, chunks_per_shard)
+        if shards is not None and dim_cps is not None:
+            shards[idx] = calculate_shard_size(da.shape[idx], c, dim_cps)
 
     nonspatial_idx = []
     for i, dim in enumerate(da.dims):
@@ -141,6 +151,8 @@ def _create_var_encoding(
                 shards[i] = 1
 
     if shards is not None and chunks_per_shard is not None:
+        # the leftover byte budget is bounded by the smallest per-dim value, so
+        # a flexed spatial dim never lets a non-spatial one widen past it
         shards = fill_nonspatial_shards(
             shards,
             chunks,
@@ -148,7 +160,7 @@ def _create_var_encoding(
             nonspatial_idx,
             itemsize,
             target_chunk_bytes,
-            chunks_per_shard,
+            min(effective_cps) if effective_cps else chunks_per_shard,
         )
 
     var_encoding = {"chunks": tuple(chunks)}
@@ -205,6 +217,10 @@ def recommend_encoding(
             leave unused widens non-spatial dims such as ``time`` or ``band``.
             Chunks along those dims stay at 1.
 
+            Treated as an upper bound on a chunked source: it is flexed down
+            per spatial dim where that is what makes the shard divide the
+            source chunk (see the note below).
+
     Returns:
         ``{var_name: {"chunks": (...), "shards": (...)}}`` for variables that
         have both spatial dims; ``"shards"`` is omitted when
@@ -230,12 +246,13 @@ def recommend_encoding(
         ```
 
     Note:
-        For a dask-backed ``ds``, xarray's ``safe_chunks`` check requires dask
-        blocks to align with the zarr write unit -- the *shard*, when sharding
-        is on. Only spatial chunks are snapped to the source, not shards, so a
-        dask source usually fails this check. Rechunk to the recommended shards
-        before writing, or pass ``safe_chunks=False``. A lazily opened
-        zarr-backed ``ds`` (``chunks=None``) is unaffected.
+        For a dask-backed ``ds``, xarray's ``safe_chunks`` check requires the
+        zarr write unit -- the *shard*, when sharding is on -- to divide the
+        dask block. The recommendation flexes ``chunks_per_shard`` down (never
+        up) until a shard does, so the snippet above writes a dask source as
+        is. A source chunk too small to divide into a chunk of usable size is
+        the exception: the recommendation keeps a read-aligned shard there, and
+        such a write still needs a rechunk or ``safe_chunks=False``.
     """
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
