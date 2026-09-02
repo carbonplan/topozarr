@@ -95,7 +95,10 @@ variables within a level stream through one shared pool.
 
 `topozarr_core.block_reduce` (Rust, rayon-parallel, GIL released):
 
-- methods: `mean`, `max`, `min`, `sum`, `nearest`
+- methods: `mean`, `max`, `min`, `sum`, `nearest`, exported as
+  `topozarr_core.METHODS` — the single source the Python layer validates
+  `create_pyramid(method=...)` against, so a topozarr paired with a core
+  that lacks a method fails at plan time rather than mid-write
 - dtypes: `u8`, `u16`, `i16`, `i32`, `i64`, `f32`, `f64`
 - 1–4 dimensional arrays
 - shape follows `xarray.coarsen(boundary="trim")`: trailing partial windows

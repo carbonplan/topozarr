@@ -15,7 +15,7 @@ from .metadata import (
     get_crs,
     recommend_encoding,
 )
-from .pyramid import CoarseningMethod, Pyramid
+from .pyramid import CoarseningMethod, Pyramid, validate_method
 
 
 def _coarsen_coord(values: np.ndarray, factor: int) -> np.ndarray:
@@ -68,7 +68,7 @@ def build_level_templates(
     # prior (coarser) level by the per-step ratio (nearest corner-picks, and
     # corner-of-corners == corner-of-native). NOTE: median/mode are NOT
     # composable -- when added, levels must reduce from native instead
-    # (see planning.md).
+    # (see planning/mode-coarsening.md).
     levels = [ds]
     for prev_factor, factor in zip(factors[:-1], factors[1:]):
         step = factor // prev_factor
@@ -154,7 +154,7 @@ def create_pyramid(
             data such as class codes or masks, where averaging invents values.
             It ignores fill values, and a class present only away from window
             corners can vanish at coarse zoom (a majority ``mode`` would fix
-            that; see planning.md).
+            that; see planning/mode-coarsening.md).
         target_chunk_bytes: Target uncompressed size per chunk (default ~500 KB).
         chunks_per_shard: Number of chunks per shard along each spatial dimension
             (e.g. ``4`` → 4×4 = 16 chunks per shard, ~8 MB). Must be a power
@@ -175,11 +175,13 @@ def create_pyramid(
         ``pyramid.write(store)`` to compute and write all levels.
 
     Raises:
-        ValueError: If ``ds`` has no CRS, ``chunks_per_shard`` is not a
+        ValueError: If ``ds`` has no CRS, ``method`` is not implemented by the
+            installed ``topozarr-core``, ``chunks_per_shard`` is not a
             power of 2 in the range 1–32, ``x_dim`` or ``y_dim`` is not a
             dimension of ``ds``, no data variable has both spatial
-            dimensions, or a spatial variable has more than 4 dimensions
-            (topozarr-core kernel limit).
+            dimensions, a coordinate is 2-D over the spatial dims
+            (curvilinear grids are not supported), or a spatial variable has
+            more than 4 dimensions (topozarr-core kernel limit).
 
     Examples:
         ```python
@@ -199,6 +201,7 @@ def create_pyramid(
         ```
     """
     factors = _resolve_factors(levels, factors)
+    validate_method(str(method))
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
     if x_dim not in ds.dims:
@@ -209,6 +212,18 @@ def create_pyramid(
         raise ValueError(
             f"no variable has both x_dim {x_dim!r} and y_dim {y_dim!r}; "
             "nothing to pyramid"
+        )
+    curvilinear = [
+        str(name)
+        for name, coord in ds.coords.items()
+        if coord.ndim > 1 and {x_dim, y_dim} & set(coord.dims)
+    ]
+    if curvilinear:
+        raise ValueError(
+            f"coordinates {curvilinear} are 2-D over the spatial dims; topozarr "
+            "coarsens 1-D coordinates only, so these would be left at native "
+            "resolution (or corner-strided by as_datatree) and mis-register the "
+            f"coarsened levels. Drop them first: ds.drop_vars({curvilinear!r})"
         )
     for name, da in ds.data_vars.items():
         if x_dim in da.dims and y_dim in da.dims and da.ndim > 4:

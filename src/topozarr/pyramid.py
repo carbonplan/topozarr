@@ -12,7 +12,7 @@ import psutil
 import xarray as xr
 import zarr
 import zarr.errors
-from topozarr_core import block_reduce
+from topozarr_core import METHODS, block_reduce
 
 from .chunking import source_chunks
 from .engine import (
@@ -27,6 +27,21 @@ from .engine import (
 )
 
 CoarseningMethod = Literal["mean", "max", "min", "sum", "nearest"]
+
+
+def validate_method(method: str) -> None:
+    """Raise if ``method`` is not implemented by the installed kernel.
+
+    Checked against ``topozarr_core.METHODS`` rather than
+    [CoarseningMethod][topozarr.pyramid.CoarseningMethod]: the two are kept
+    equal by a test, but only the kernel's own list catches a topozarr paired
+    with a core that predates a method it advertises (issue #26). Without this
+    the mismatch surfaces from ``block_reduce`` on the first *coarsened* level,
+    by which point level 0 is already in the store.
+    """
+    if method not in METHODS:
+        listed = ", ".join(repr(m) for m in METHODS)
+        raise ValueError(f"method must be one of {listed}; got {method!r}")
 
 
 def _make_fused_reduce_hook(
@@ -103,6 +118,11 @@ class Pyramid:
     method: CoarseningMethod
     factors: list[int] = field(default_factory=list)
     fill_values: dict[str, float | int | None] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # method is a plain field, so a plan can be edited after create_pyramid
+        # validated it; re-check here so the invariant holds at write time
+        validate_method(str(self.method))
 
     @property
     def levels(self) -> int:
@@ -271,6 +291,11 @@ class Pyramid:
             pyramid.write("pyramid.zarr", mode="a", levels=[1, 2])
             ```
         """
+        # re-checked here, not just in __post_init__: method is a plain field,
+        # so `pyramid.method = "median"` after planning would otherwise reach
+        # the kernel only on the first coarsened level, with level 0 written
+        validate_method(str(self.method))
+
         if levels is not None:
             invalid = sorted(set(levels) - set(self.level_templates))
             if invalid:
