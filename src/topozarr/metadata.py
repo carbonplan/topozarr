@@ -15,6 +15,7 @@ from .chunking import (
     calculate_chunk_size,
     calculate_shard_size,
     fill_nonspatial_shards,
+    get_ideal_1d,
     get_ideal_dim,
     snap_chunk_to_source,
     source_chunks,
@@ -92,12 +93,37 @@ def create_level_encoding(
         if {x_dim, y_dim} & set(da.dims)
     }
 
-    return {
+    encoding = {
         var_name: _create_var_encoding(
             da, x_dim, y_dim, target_chunk_bytes, chunks_per_shard, source_chunk_sizes
         )
         for var_name, da in spatial_vars.items()
     }
+    encoding.update(_create_coord_encoding(ds, x_dim, y_dim, target_chunk_bytes))
+    return encoding
+
+
+def _create_coord_encoding(
+    ds: xr.Dataset, x_dim: str, y_dim: str, target_chunk_bytes: int
+) -> dict[str, Any]:
+    """Chunks for 1-D coordinates along a spatial dim.
+
+    Left to xarray, a coordinate is written as a single chunk covering the
+    whole array -- a multi-MB blocking read at 10^7 elements. Sized as a 1-D
+    array rather than a tile, and left unsharded: the arrays are small enough
+    relative to the data that the extra index buys nothing.
+    """
+    encoding = {}
+    for name, coord in ds.coords.items():
+        if coord.ndim != 1 or coord.dims[0] not in (x_dim, y_dim):
+            continue
+        size = coord.shape[0]
+        chunk = calculate_chunk_size(
+            size, get_ideal_1d(coord.dtype.itemsize, target_chunk_bytes)
+        )
+        if chunk < size:
+            encoding[str(name)] = {"chunks": (chunk,)}
+    return encoding
 
 
 def _create_var_encoding(
@@ -229,8 +255,10 @@ def recommend_encoding(
         ``{var_name: {"chunks": (...), "shards": (...)}}`` for variables over at
         least one spatial dim (a variable with only one is sized along that dim
         alone); ``"shards"`` is omitted when ``chunks_per_shard`` is ``None``.
-        Variables over neither spatial dim are absent and fall through to
-        xarray's defaults.
+        A 1-D coordinate along a spatial dim gets ``"chunks"`` only, sized as a
+        1-D array and never sharded, and is absent when the whole coordinate
+        already fits in one chunk. Variables over neither spatial dim are
+        absent and fall through to xarray's defaults.
 
     Raises:
         ValueError: If ``chunks_per_shard`` is not a power of 2 in the range

@@ -178,6 +178,15 @@ The heuristics target ~500 KB chunks for web visualization. Tune shard size with
 
 Pass `chunks_per_shard=None` to disable sharding entirely.
 
+### Coordinates
+
+A 1-D coordinate along a spatial dimension is chunked too, sized as a 1-D array
+against the same byte target (~65k `f8` elements at the default ~500 KB) rather
+than as a tile, and never sharded. Left to xarray's defaults it would be one
+chunk covering the whole array — fine at 10^4 elements, a multi-MB blocking read
+at 10^7. A coordinate that already fits in one chunk is left alone and does not
+appear in `pyramid.encoding`.
+
 ### Non-spatial dimensions
 
 `chunks_per_shard` also sets a shard byte budget. Spatial dimensions are sized first; whatever is left over widens non-spatial dimensions (`time`, `band`, ...) instead of leaving them at one element per shard. Chunk size along those dimensions stays 1, so reads still fetch a single element.

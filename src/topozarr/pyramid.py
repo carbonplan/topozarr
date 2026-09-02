@@ -375,8 +375,19 @@ class Pyramid:
                 timer = RegionTimer() if stats else None
                 template = self.level_templates[lvl]
                 # coords + non-spatial vars + level attrs via xarray
-                template.drop_vars(coarsened_vars, errors="ignore").to_zarr(
-                    store, group=str(lvl), mode="a", zarr_format=3, consolidated=False
+                side = template.drop_vars(coarsened_vars, errors="ignore")
+                level_enc = self.encoding.get(f"/{lvl}", {})
+                side.to_zarr(
+                    store,
+                    group=str(lvl),
+                    mode="a",
+                    zarr_format=3,
+                    consolidated=False,
+                    encoding={
+                        name: enc
+                        for name, enc in level_enc.items()
+                        if name in side.variables
+                    },
                 )
                 if not coarsened_vars:
                     continue
