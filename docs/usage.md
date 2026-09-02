@@ -49,8 +49,12 @@ before anything is written:
   drop them with `ds.drop_vars(["lat", "lon"])` if they are redundant.
 - **Spatial variables** are limited to 4 dimensions (the kernel's limit). Use
   `as_datatree()` for the xarray/Dask path, which lifts it.
+- **Non-numeric variables over a spatial dim** (string labels, datetimes) are
+  rejected: neither path can reduce them. Drop them with `ds.drop_vars([...])`.
 
-Coordinates over non-spatial dimensions are untouched, 2-D or not.
+A variable over only *one* spatial dim — a per-column `profile(time, x)`, say —
+is coarsened along that dim alone, on both `write` and `as_datatree`. Variables
+and coordinates over neither spatial dimension are untouched, 2-D or not.
 
 ## Single-resolution datasets (no pyramid)
 
@@ -83,8 +87,9 @@ produces `/0` nesting and a one-entry `multiscales` attr.
 CRS is read from the dataset (xproj) or passed explicitly via `crs="EPSG:4326"`.
 Visualization hints work the same as `create_pyramid` via `layer_hints`.
 `recommend_encoding` needs no CRS — the encoding depends only on shape and
-dtype. It covers variables with both spatial dims; anything else falls through
-to xarray's defaults.
+dtype. It covers variables over at least one spatial dim — one with only a
+single spatial dim is sized along that dim alone; anything over neither falls
+through to xarray's defaults.
 
 For a **dask-backed** dataset, xarray's `safe_chunks` check requires the zarr
 write unit — the *shard*, when sharding is on — to divide the dask block.

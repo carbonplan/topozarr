@@ -47,9 +47,10 @@ def _coarsen_template(ds: xr.Dataset, x_dim: str, y_dim: str, step: int) -> xr.D
     """Coarsen the spatial dims of ``ds`` by ``step``: real coarsened coords,
     placeholder data.
 
-    Spatial data variables become zero-cost broadcast arrays of the right
-    shape/dtype (filled in by ``Pyramid.write``); non-spatial variables and
-    coords pass through unchanged.
+    Any variable carrying at least one spatial dim becomes a zero-cost broadcast
+    array of the right shape/dtype (filled in by ``Pyramid.write``), coarsened
+    along whichever spatial dims it has; variables over neither spatial dim and
+    non-spatial coords pass through unchanged.
     """
     spatial_dims = {x_dim, y_dim}
 
@@ -64,7 +65,7 @@ def _coarsen_template(ds: xr.Dataset, x_dim: str, y_dim: str, step: int) -> xr.D
 
     data_vars = {}
     for name, da in ds.data_vars.items():
-        if spatial_dims <= set(da.dims):
+        if spatial_dims & set(da.dims):
             shape = tuple(
                 s // step if d in spatial_dims else s for d, s in zip(da.dims, da.shape)
             )
@@ -165,7 +166,10 @@ def create_pyramid(
             Mutually exclusive with ``levels``.
         x_dim: Name of the x (longitude / easting) dimension.
         y_dim: Name of the y (latitude / northing) dimension.
-        method: Spatial aggregation method for coarsening. Integer variables
+        method: Spatial aggregation method for coarsening. Applied along
+            whichever spatial dims a variable carries, so a variable over one
+            of them (e.g. a per-column ``profile(time, x)``) is coarsened along
+            that dim alone. Integer variables
             keep their dtype: ``mean`` truncates toward zero (unlike
             ``xarray.coarsen``, which promotes to float). ``nearest`` decimates
             (keeps the top-left cell of each window) — use it for categorical
@@ -197,8 +201,9 @@ def create_pyramid(
             power of 2 in the range 1–32, ``x_dim`` or ``y_dim`` is not a
             dimension of ``ds``, no data variable has both spatial
             dimensions, a coordinate is 2-D over the spatial dims
-            (curvilinear grids are not supported), or a spatial variable has
-            more than 4 dimensions (topozarr-core kernel limit).
+            (curvilinear grids are not supported), a spatial variable has
+            more than 4 dimensions (topozarr-core kernel limit), or a variable
+            over a spatial dim has a non-numeric dtype.
 
     Examples:
         ```python
@@ -243,11 +248,19 @@ def create_pyramid(
             f"coarsened levels. Drop them first: ds.drop_vars({curvilinear!r})"
         )
     for name, da in ds.data_vars.items():
-        if x_dim in da.dims and y_dim in da.dims and da.ndim > 4:
+        if not {x_dim, y_dim} & set(da.dims):
+            continue
+        if da.ndim > 4:
             raise ValueError(
                 f"spatial variable {name!r} has {da.ndim} dimensions; "
                 "topozarr-core supports at most 4 "
                 "(use pyramid.as_datatree() for the xarray/Dask path, which lifts this limit)"
+            )
+        if not np.issubdtype(da.dtype, np.number):
+            raise ValueError(
+                f"variable {name!r} has non-numeric dtype {da.dtype} and is over a "
+                "spatial dim; neither coarsening path can reduce it. Drop it first: "
+                f"ds.drop_vars([{str(name)!r}])"
             )
     crs_str = get_crs(ds)
     level_templates = build_level_templates(ds, factors, x_dim, y_dim)

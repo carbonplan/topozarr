@@ -80,6 +80,28 @@ ds.to_zarr(
 )
 ```
 
+### Coming from ndpyramid
+
+topozarr is the modern replacement for [ndpyramid](https://github.com/carbonplan/ndpyramid).
+The one behavior change worth knowing up front: **topozarr does not reproject or
+regrid.** It coarsens on the grid it is given.
+
+ndpyramid predates the multiscales/geozarr conventions and hard-coded square
+slippy-map tiles (reproject to EPSG:3857) for carbonplan-maps. zarr-layer
+superseded carbonplan-maps and reads arbitrary zarr shapes and CRSs, so the
+reprojection machinery is no longer needed to display the data.
+
+| ndpyramid | topozarr |
+| --- | --- |
+| `pyramid_coarsen` | `create_pyramid(ds, levels=...)` |
+| `pyramid_reproject` | no equivalent — reproject upstream, then `create_pyramid` |
+| `pyramid_regrid` | no equivalent — regrid upstream, then `create_pyramid` |
+
+If you need a different grid, do it before the pyramid with
+[rioxarray](https://corteva.github.io/rioxarray/) / [odc-geo](https://odc-geo.readthedocs.io/)
+(reprojection) or [xesmf](https://xesmf.readthedocs.io/) (regridding), and hand
+the result to `create_pyramid`.
+
 ### Documentation
 
 Full docs at **[carbonplan.github.io/topozarr](https://carbonplan.github.io/topozarr/)**:
