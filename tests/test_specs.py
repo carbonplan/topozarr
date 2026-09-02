@@ -92,11 +92,35 @@ def _write_and_open(pyramid):
     return xr.open_datatree(store, engine="zarr", consolidated=False)
 
 
+CONFORMANCE_CASES = {
+    "square": dict(nx=32, ny=32, levels=3),
+    "non_square": dict(nx=48, ny=32, levels=3),
+    "sparse_factors": dict(nx=64, ny=48, factors=[1, 2, 8]),
+    "extra_dim": dict(nx=32, ny=32, extra_dims={"time": 3}, levels=3),
+    "projected_crs_extra_dim": dict(
+        nx=32, ny=32, epsg="EPSG:3857", extra_dims={"time": 2}, levels=2
+    ),
+}
+
+
+def _build_case_pyramid(create_dataset, case):
+    case = dict(case)
+    nx = case.pop("nx")
+    ny = case.pop("ny")
+    epsg = case.pop("epsg", "EPSG:4326")
+    extra_dims = case.pop("extra_dims", None)
+    ds = create_dataset(nx=nx, ny=ny, epsg=epsg, extra_dims=extra_dims)
+    return create_pyramid(ds, **case)
+
+
 @pytest.mark.conformance
-def test_geozarr_toolkit_detect_conventions(create_dataset):
+@pytest.mark.parametrize(
+    "case", CONFORMANCE_CASES.values(), ids=CONFORMANCE_CASES.keys()
+)
+def test_geozarr_toolkit_detect_conventions(create_dataset, case):
     """geozarr conventions check"""
     geozarr_toolkit = pytest.importorskip("geozarr_toolkit")
-    pyramid = create_pyramid(create_dataset(nx=32, ny=32), levels=3)
+    pyramid = _build_case_pyramid(create_dataset, case)
     detected = geozarr_toolkit.detect_conventions(pyramid.attrs)
     assert "multiscales" in detected, "multiscales convention not detected"
     assert "spatial" in detected, "spatial convention not detected"
@@ -104,10 +128,13 @@ def test_geozarr_toolkit_detect_conventions(create_dataset):
 
 
 @pytest.mark.conformance
-def test_geozarr_toolkit_per_level_validation(create_dataset):
+@pytest.mark.parametrize(
+    "case", CONFORMANCE_CASES.values(), ids=CONFORMANCE_CASES.keys()
+)
+def test_geozarr_toolkit_per_level_validation(create_dataset, case):
     """per level validation"""
     validate_attrs = pytest.importorskip("geozarr_toolkit").validate_attrs
-    pyramid = create_pyramid(create_dataset(nx=32, ny=32), levels=3)
+    pyramid = _build_case_pyramid(create_dataset, case)
     dt = _write_and_open(pyramid)
     for level_name, level_node in dt.children.items():
         errors = validate_attrs(level_node.attrs)
@@ -118,10 +145,13 @@ def test_geozarr_toolkit_per_level_validation(create_dataset):
 
 
 @pytest.mark.conformance
-def test_geozarr_toolkit_group_validation(create_dataset):
+@pytest.mark.parametrize(
+    "case", CONFORMANCE_CASES.values(), ids=CONFORMANCE_CASES.keys()
+)
+def test_geozarr_toolkit_group_validation(create_dataset, case):
     """validate full pyramid conventions"""
     validate_group = pytest.importorskip("geozarr_toolkit").validate_group
-    pyramid = create_pyramid(create_dataset(nx=32, ny=32), levels=3)
+    pyramid = _build_case_pyramid(create_dataset, case)
     dt = _write_and_open(pyramid)
     errors = validate_group(dt)
     for convention, errs in errors.items():
