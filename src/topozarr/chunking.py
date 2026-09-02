@@ -28,6 +28,11 @@ def get_ideal_dim(itemsize: int, target_bytes: int) -> int:
     return max(128, int(math.sqrt(target_bytes / itemsize)))
 
 
+def get_ideal_1d(itemsize: int, target_bytes: int) -> int:
+    """Elements per chunk for a 1-D array (a coordinate), not a 2-D tile."""
+    return max(128, target_bytes // itemsize)
+
+
 def calculate_chunk_size(dim_size: int, ideal_chunk_dim: int) -> int:
     if dim_size <= 128 or dim_size <= ideal_chunk_dim:
         return dim_size

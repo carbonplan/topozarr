@@ -84,7 +84,8 @@ def test_written_arrays_match_shard_encoding(create_dataset):
         for var_name, var_enc in level_encoding.items():
             arr = root[f"{level_path.lstrip('/')}/{var_name}"]
             assert arr.chunks == var_enc["chunks"]
-            assert arr.shards == var_enc["shards"]
+            # coordinate encodings carry chunks only
+            assert arr.shards == var_enc.get("shards")
 
     # metadata alone doesn't prove the write path stored real data: check
     # level 0 (a verbatim copy) actually holds the source values, not a
@@ -376,3 +377,39 @@ def test_calculate_shard_size():
         )
 
         assert shard <= dim_size, f"shard {shard} exceeds dim {dim_size}"
+
+
+def test_coord_arrays_are_chunked(create_dataset):
+    import zarr
+
+    from topozarr.coarsen import create_pyramid
+
+    ds = create_dataset(nx=2000, ny=2000)
+    pyramid = create_pyramid(ds, levels=2, target_chunk_bytes=8192)
+
+    # f8 coords at an 8 KB target: 1024 elements per chunk, so 2000 splits in 2
+    assert pyramid.encoding["/0"]["x"] == {"chunks": (1000,)}
+    assert "shards" not in pyramid.encoding["/0"]["x"]
+
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+    root = zarr.open_group(store, mode="r")
+    assert root["0/x"].chunks == (1000,)
+    assert root["0/y"].chunks == (1000,)
+    # level 1 is half the size and fits in one chunk, so it is left alone
+    assert "x" not in pyramid.encoding["/1"]
+
+
+def test_small_coords_keep_xarray_default(create_dataset):
+    from topozarr.coarsen import create_pyramid
+
+    pyramid = create_pyramid(create_dataset(nx=64, ny=64), levels=2)
+    assert "x" not in pyramid.encoding["/0"]
+    assert "y" not in pyramid.encoding["/0"]
+
+
+def test_recommend_encoding_chunks_coords(create_dataset):
+    from topozarr.metadata import recommend_encoding
+
+    enc = recommend_encoding(create_dataset(nx=2000, ny=2000), target_chunk_bytes=8192)
+    assert enc["x"] == {"chunks": (1000,)}
