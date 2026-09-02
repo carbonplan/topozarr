@@ -67,8 +67,8 @@ def build_level_templates(
     # mean/max/min/sum/nearest are composable, so each level coarsens from the
     # prior (coarser) level by the per-step ratio (nearest corner-picks, and
     # corner-of-corners == corner-of-native). NOTE: median/mode are NOT
-    # composable -- when added, levels must reduce from native instead
-    # (see planning/mode-coarsening.md).
+    # composable -- were either added, levels would have to reduce from native
+    # instead, which this chaining cannot express.
     levels = [ds]
     for prev_factor, factor in zip(factors[:-1], factors[1:]):
         step = factor // prev_factor
@@ -153,8 +153,7 @@ def create_pyramid(
             (keeps the top-left cell of each window) — use it for categorical
             data such as class codes or masks, where averaging invents values.
             It ignores fill values, and a class present only away from window
-            corners can vanish at coarse zoom (a majority ``mode`` would fix
-            that; see planning/mode-coarsening.md).
+            corners can vanish at coarse zoom.
         target_chunk_bytes: Target uncompressed size per chunk (default ~500 KB).
         chunks_per_shard: Number of chunks per shard along each spatial dimension
             (e.g. ``4`` → 4×4 = 16 chunks per shard, ~8 MB). Must be a power

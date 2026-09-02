@@ -16,6 +16,20 @@
   `topozarr` advertising a method its linked `topozarr-core` does not
   implement now fails at plan time.
 
+- `as_datatree()` now matches `write()` value for value. `xarray.coarsen` knows
+  nothing of `_FillValue`, so the Dask path averaged the sentinel in as data —
+  silently wrong for masked rasters, with nothing in the output to hint at it.
+  It also promoted integers to float, which left `pyramid.encoding` (sized from
+  the source itemsize) mis-sized for the data being written through it. Levels
+  are now coarsened on an `f8` promotion with the fill masked to NaN, then
+  refilled, clipped and cast back to the source dtype. The clip matters for an
+  integer `sum`: the kernel saturates an out-of-range accumulator where a bare
+  numpy cast wraps.
+
+  An `f8` source is the one remaining divergence — under 1 ULP on `mean`/`sum`,
+  from window summation order. A method with no `xarray.coarsen` equivalent now
+  raises `NotImplementedError` instead of `AttributeError`.
+
 - `create_pyramid` rejects datasets whose spatial coordinates are 2-D
   (curvilinear grids, e.g. `lat(y, x)`). They were never coarsened: the level
   templates left them at native resolution, which surfaced as an opaque
