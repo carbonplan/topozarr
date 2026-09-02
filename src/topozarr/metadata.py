@@ -89,7 +89,7 @@ def create_level_encoding(
     spatial_vars = {
         str(var_name): da
         for var_name, da in ds.data_vars.items()
-        if x_dim in da.dims and y_dim in da.dims
+        if {x_dim, y_dim} & set(da.dims)
     }
 
     return {
@@ -111,7 +111,11 @@ def _create_var_encoding(
     itemsize = da.dtype.itemsize
     ideal_chunk = get_ideal_dim(itemsize, target_chunk_bytes)
 
-    y_idx, x_idx = da.get_axis_num(y_dim), da.get_axis_num(x_dim)
+    # a variable over only one spatial dim (e.g. a per-column profile) is sized
+    # along the dim it has; the rest of this function works off axis indices
+    spatial = [
+        (int(da.get_axis_num(dim)), dim) for dim in (y_dim, x_dim) if dim in da.dims
+    ]
 
     chunks = list(da.shape)
     shards = list(da.shape) if chunks_per_shard is not None else None
@@ -119,7 +123,7 @@ def _create_var_encoding(
     # snapping may flex chunks_per_shard down per spatial dim (see
     # snap_chunk_to_source); the effective value drives that dim's shard
     effective_cps: list[int] = []
-    for idx, dim_name in [(y_idx, y_dim), (x_idx, x_dim)]:
+    for idx, dim_name in spatial:
         snapped = None
         if source_chunk_sizes is not None and dim_name in source_chunk_sizes:
             snapped = snap_chunk_to_source(
@@ -222,10 +226,11 @@ def recommend_encoding(
             source chunk (see the note below).
 
     Returns:
-        ``{var_name: {"chunks": (...), "shards": (...)}}`` for variables that
-        have both spatial dims; ``"shards"`` is omitted when
-        ``chunks_per_shard`` is ``None``. Non-spatial variables are absent and
-        fall through to xarray's defaults.
+        ``{var_name: {"chunks": (...), "shards": (...)}}`` for variables over at
+        least one spatial dim (a variable with only one is sized along that dim
+        alone); ``"shards"`` is omitted when ``chunks_per_shard`` is ``None``.
+        Variables over neither spatial dim are absent and fall through to
+        xarray's defaults.
 
     Raises:
         ValueError: If ``chunks_per_shard`` is not a power of 2 in the range

@@ -9,8 +9,8 @@ which knobs control memory and performance.
  written. It produces a [`Pyramid`][topozarr.pyramid.Pyramid]
 holding:
 
-- **Datatree**: per-level `xr.Dataset`s with real (mean-coarsened)
-  coordinates.
+- **level_templates**: per-level `xr.Dataset`s with real (mean-coarsened)
+  coordinates and placeholder data.
 - **encoding**: chunk and shard sizes per variable per level.
 - **attrs**: root metadata following the zarr-conventions
   [multiscales](https://github.com/zarr-conventions/multiscales),
@@ -103,7 +103,10 @@ out; nothing larger than `workers x region` is ever in memory.
   whole source chunks are read once, unless that exceeds `max_region_bytes`
   (default 256 MB), in which case the plain shard grid is used.
 - **Levels 1+**: the region is one output shard; the input block read from the
-  previous level is the region scaled by the 2×2 stride (~4× larger).
+  previous level is the region scaled by the per-step stride along each spatial
+  axis the variable carries — `step × step` for a raster (~4× larger at the
+  default `step=2`, more for a sparse `factors=` jump), `step` for a variable
+  over a single spatial dim.
 
 Peak memory is roughly `max_workers * 5 * region_bytes` (source block,
 contiguous copy, reduced output, codec buffers). With `max_workers=None` the

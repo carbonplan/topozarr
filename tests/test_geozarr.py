@@ -121,6 +121,18 @@ def test_recommend_encoding_no_spatial_variable(create_dataset):
         recommend_encoding(ds)
 
 
+def test_recommend_encoding_covers_partly_spatial_vars(create_dataset):
+    """A variable over one spatial dim is sized along that dim alone."""
+    ds = create_dataset(nx=2000, ny=2000, add_crs=False)
+    ds["profile"] = ("x", np.arange(2000, dtype="f4"))
+    ds["scalarish"] = ("t", np.arange(3, dtype="f4"))
+
+    enc = recommend_encoding(ds)
+    assert "scalarish" not in enc  # no spatial dim: xarray defaults
+    assert enc["profile"]["chunks"] == (enc["elevation"]["chunks"][1],)
+    assert enc["profile"]["shards"] == (enc["elevation"]["shards"][1],)
+
+
 def test_recommend_encoding_needs_no_crs(create_dataset):
     ds = create_dataset(add_crs=False)
     assert "elevation" in recommend_encoding(ds)

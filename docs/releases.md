@@ -4,6 +4,19 @@
 
 ### Fixed
 
+- `write` no longer drops variables over exactly one spatial dim. A variable
+  like `profile(time, x)` is legal input and appears in every level template,
+  but only variables carrying *both* spatial dims were computed. Above level 0
+  the template placeholder was written verbatim: all-NaN data, float-promoted
+  off the source dtype, with level 0 correct — silent wrong data, easy to miss.
+  Such variables are now coarsened along whichever spatial dim they carry,
+  matching `as_datatree()`, and get a chunk/shard recommendation at every level.
+
+  `recommend_encoding` covers them on the flat path too, so a partly-spatial
+  variable is now sized along its spatial dim instead of falling through to
+  xarray's defaults. Non-numeric variables over a spatial dim (string labels,
+  datetimes), which neither path can reduce, are rejected at plan time.
+
 - `create_pyramid` now validates `method` when the plan is built instead of
   letting the Rust kernel reject it on the first *coarsened* level — by which
   point level 0 was already written to the store. `Pyramid.write` re-checks,

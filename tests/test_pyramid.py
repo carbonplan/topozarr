@@ -783,19 +783,16 @@ def test_as_datatree_stays_lazy(create_dataset):
         assert dt[lvl].ds.elevation.dtype == np.dtype("i2")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="write leaves a variable over exactly one spatial dim uncomputed "
-    "(all-NaN above level 0); as_datatree coarsens it correctly. Write-path "
-    "bug, tracked in planning/review-2026-09-02.md -- flip this to a plain "
-    "test when it lands.",
-)
-def test_as_datatree_matches_write_partly_spatial_var():
-    n = 16
+def _partly_spatial_dataset(n=16, fill=None):
+    """Raster plus one variable per spatial dim: (time, x) and (y,)."""
+    profile = np.arange(3 * n, dtype="i2").reshape(3, n)
+    if fill is not None:
+        profile[0, ::3] = fill
     ds = xr.Dataset(
         {
             "elev": (("y", "x"), np.arange(n * n, dtype="f4").reshape(n, n)),
-            "profile": (("time", "x"), np.arange(3 * n, dtype="i2").reshape(3, n)),
+            "profile": (("time", "x"), profile),
+            "row": (("y",), np.arange(n, dtype="i2")),
         },
         coords={
             "x": np.arange(n, dtype="f8"),
@@ -803,11 +800,57 @@ def test_as_datatree_matches_write_partly_spatial_var():
             "time": np.arange(3),
         },
     ).proj.assign_crs(spatial_ref="EPSG:4326")
+    if fill is not None:
+        ds.profile.attrs["_FillValue"] = fill
+    return ds
 
-    pyramid = create_pyramid(ds, levels=2, method="mean")
+
+@pytest.mark.parametrize("fill", [None, -1])
+def test_as_datatree_matches_write_partly_spatial_var(fill):
+    """A variable over one spatial dim is coarsened along that dim, not dropped.
+
+    Level 0 is a plain copy on both paths, so the divergence only shows above
+    it -- levels 1-2 here, which also exercises the chained level template.
+    """
+    ds = _partly_spatial_dataset(fill=fill)
+
+    pyramid = create_pyramid(ds, levels=3, method="mean")
     store = zarr.storage.MemoryStore()
     pyramid.write(store)
     root = zarr.open_group(store, mode="r")
-    np.testing.assert_array_equal(
-        pyramid.as_datatree()["1"].ds.profile.values, root["1/profile"][:]
+    dt = pyramid.as_datatree()
+
+    for lvl in range(3):
+        for name in ("profile", "row"):
+            written = root[f"{lvl}/{name}"][:]
+            assert written.dtype == ds[name].dtype
+            np.testing.assert_array_equal(written, dt[str(lvl)].ds[name].values)
+
+
+def test_partly_spatial_var_is_encoded_at_every_level():
+    pyramid = create_pyramid(_partly_spatial_dataset(), levels=3)
+    for lvl in range(3):
+        enc = pyramid.encoding[f"/{lvl}"]
+        assert "profile" in enc and "row" in enc
+        # chunks stay at 1 along non-spatial dims, as for fully spatial vars
+        assert enc["profile"]["chunks"][0] == 1
+        assert len(enc["row"]["chunks"]) == 1
+
+
+def test_non_numeric_var_over_spatial_dim_raises(create_dataset):
+    ds = create_dataset(nx=16, ny=16)
+    ds["label"] = ("x", np.array(list("abcdefghijklmnop"), dtype=object))
+
+    with pytest.raises(ValueError, match="non-numeric dtype"):
+        create_pyramid(ds, levels=2)
+
+
+def test_partly_spatial_var_over_kernel_ndim_limit_raises(create_dataset):
+    ds = create_dataset(nx=16, ny=16)
+    ds["profile"] = (
+        ("time", "band", "level", "run", "x"),
+        np.zeros((2, 2, 2, 2, 16), dtype="f4"),
     )
+
+    with pytest.raises(ValueError, match="topozarr-core supports at most 4"):
+        create_pyramid(ds, levels=2)

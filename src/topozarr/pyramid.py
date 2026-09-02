@@ -137,11 +137,17 @@ class Pyramid:
         """Per-step downsample ratio coarsening level ``lvl-1`` into ``lvl``."""
         return self.factors[lvl] // self.factors[lvl - 1]
 
-    def _spatial_vars(self) -> list[str]:
+    def _coarsened_vars(self) -> list[str]:
+        """Variables ``write`` computes: those over at least one spatial dim.
+
+        Mirrors ``_is_coarsened`` on the datatree path -- a variable over one
+        spatial dim (e.g. a per-column profile) is coarsened along that dim.
+        Variables over neither pass through from the level template unchanged.
+        """
         return [
             str(name)
             for name, da in self.source.data_vars.items()
-            if self.x_dim in da.dims and self.y_dim in da.dims
+            if {self.x_dim, self.y_dim} & set(da.dims)
         ]
 
     def _region_shape(
@@ -168,9 +174,12 @@ class Pyramid:
         nbytes = math.prod(region) * template_da.dtype.itemsize
         if lvl > 0:
             # the input block is the output region scaled by the per-step stride
-            # along each spatial axis (step*step for a 2-D coarsening window)
+            # along each spatial axis the variable carries (step*step for a
+            # 2-D coarsening window, step for a variable over one spatial dim)
             step = self._step(lvl)
-            nbytes *= step * step
+            nbytes *= step ** sum(
+                d in (self.x_dim, self.y_dim) for d in template_da.dims
+            )
         return nbytes
 
     def _region_count(self, lvl: int, name: str, max_region_bytes: int) -> int:
@@ -181,7 +190,7 @@ class Pyramid:
     def _compute_use_fusion(
         self,
         write_levels: list[int],
-        spatial_vars: list[str],
+        coarsened_vars: list[str],
         max_region_bytes: int,
         keep: bool | None,
     ) -> bool:
@@ -190,7 +199,7 @@ class Pyramid:
         Fusion keeps each written level in RAM so the next level is produced
         during the write pass instead of being re-read from the store.
         """
-        if keep is False or not spatial_vars or len(write_levels) < 2:
+        if keep is False or not coarsened_vars or len(write_levels) < 2:
             return False
         base_lvl = write_levels[0]
         if base_lvl not in self.level_templates:
@@ -200,12 +209,12 @@ class Pyramid:
             math.prod(self.level_templates[lvl][name].shape)
             * self.level_templates[lvl][name].dtype.itemsize
             for lvl in write_levels[1:]
-            for name in spatial_vars
+            for name in coarsened_vars
             if lvl in self.level_templates
         )
         max_rb = max(
             self._region_bytes(base_lvl, name, max_region_bytes)
-            for name in spatial_vars
+            for name in coarsened_vars
         )
         # default_max_workers caps the worker budget at available//2 by
         # construction, so require level buffers + workers to fit in 3/4 of
@@ -311,7 +320,7 @@ class Pyramid:
         write_levels = (
             list(range(self.levels)) if levels is None else sorted(set(levels))
         )
-        spatial_vars = self._spatial_vars()
+        coarsened_vars = self._coarsened_vars()
 
         if mode == "w" and set(write_levels) != set(self.level_templates):
             # mode="w" truncates the store, so a partial write over existing
@@ -334,13 +343,13 @@ class Pyramid:
             total = sum(
                 self._region_count(lvl, name, max_region_bytes)
                 for lvl in write_levels
-                for name in spatial_vars
+                for name in coarsened_vars
             )
             pbar = _progress_bar(total)
             on_region = pbar.update
 
         use_fusion = self._compute_use_fusion(
-            write_levels, spatial_vars, max_region_bytes, keep_levels_in_memory
+            write_levels, coarsened_vars, max_region_bytes, keep_levels_in_memory
         )
         write_levels_set = set(write_levels)
         mem_levels: dict[str, np.ndarray] = {}
@@ -349,7 +358,7 @@ class Pyramid:
         for lvl in write_levels:
             if lvl == 0 or (lvl - 1) in write_levels_set:
                 continue
-            missing = [n for n in spatial_vars if f"{lvl - 1}/{n}" not in root]
+            missing = [n for n in coarsened_vars if f"{lvl - 1}/{n}" not in root]
             if missing:
                 raise ValueError(
                     f"level {lvl} is coarsened from level {lvl - 1}, which is "
@@ -366,10 +375,10 @@ class Pyramid:
                 timer = RegionTimer() if stats else None
                 template = self.level_templates[lvl]
                 # coords + non-spatial vars + level attrs via xarray
-                template.drop_vars(spatial_vars, errors="ignore").to_zarr(
+                template.drop_vars(coarsened_vars, errors="ignore").to_zarr(
                     store, group=str(lvl), mode="a", zarr_format=3, consolidated=False
                 )
-                if not spatial_vars:
+                if not coarsened_vars:
                     continue
                 level_group = cast(zarr.Group, root[str(lvl)])
 
@@ -378,13 +387,13 @@ class Pyramid:
                     workers = default_max_workers(
                         max(
                             self._region_bytes(lvl, name, max_region_bytes)
-                            for name in spatial_vars
+                            for name in coarsened_vars
                         )
                     )
 
                 next_mem, next_stride = self._fusion_buffers(
                     lvl,
-                    spatial_vars,
+                    coarsened_vars,
                     write_levels_set,
                     use_fusion,
                     mem_levels,
@@ -394,7 +403,7 @@ class Pyramid:
                 with ThreadPoolExecutor(workers) as ex:
                     futures = [
                         future
-                        for name in spatial_vars
+                        for name in coarsened_vars
                         for future in self._write_var(
                             root,
                             level_group,
@@ -419,7 +428,7 @@ class Pyramid:
                         "workers": workers,
                         "region_shapes": {
                             name: self._region_shape(lvl, name, max_region_bytes)
-                            for name in spatial_vars
+                            for name in coarsened_vars
                         },
                         "wall_s": round(perf_counter() - t_level, 3),
                         **timer.as_dict(),
@@ -432,7 +441,7 @@ class Pyramid:
     def _fusion_buffers(
         self,
         lvl: int,
-        spatial_vars: list[str],
+        coarsened_vars: list[str],
         write_levels_set: set[int],
         use_fusion: bool,
         mem_levels: dict[str, np.ndarray],
@@ -453,7 +462,7 @@ class Pyramid:
         ):
             return next_mem, next_stride
         step = self._step(lvl + 1)
-        for name in spatial_vars:
+        for name in coarsened_vars:
             if lvl > 0 and name not in mem_levels:
                 continue  # no memory source; skip fusion for this var
             dims = self.level_templates[lvl][name].dims
