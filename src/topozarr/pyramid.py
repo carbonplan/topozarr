@@ -28,6 +28,11 @@ from .engine import (
 
 CoarseningMethod = Literal["mean", "max", "min", "sum", "nearest"]
 
+# Methods `xarray.coarsen` can express, for the as_datatree path. `nearest` is
+# absent because xarray has no such reduction -- _decimate covers it. A kernel
+# method missing from both is rejected rather than dispatched blindly.
+XR_COARSEN_METHODS = frozenset({"mean", "max", "min", "sum"})
+
 
 def validate_method(method: str) -> None:
     """Raise if ``method`` is not implemented by the installed kernel.
@@ -545,12 +550,85 @@ class Pyramid:
             timer=timer,
         )
 
+    def _fill_of(self, name: str) -> float | int | None:
+        """The variable's fill value, or None when there is nothing to mask.
+
+        A NaN fill is reported as None: ``xarray.coarsen`` already skips NaN
+        for float dtypes, so masking and restoring it would be a no-op.
+        """
+        fill = self.fill_values.get(name)
+        if fill is None or (isinstance(fill, float) and math.isnan(fill)):
+            return None
+        return fill
+
+    def _is_coarsened(self, da: xr.DataArray) -> bool:
+        """True for numeric variables a coarsen actually touches.
+
+        Variables over neither spatial dim pass through unchanged, and a
+        non-numeric one (labels, datetimes) cannot be promoted to f8 at all.
+        """
+        return bool({self.x_dim, self.y_dim} & set(da.dims)) and np.issubdtype(
+            da.dtype, np.number
+        )
+
+    def _prepare(self, ds: xr.Dataset) -> xr.Dataset:
+        """Mask fill values to NaN and promote to f8 before coarsening.
+
+        ``xarray.coarsen`` has no notion of ``_FillValue``; without the mask it
+        averages the sentinel in as data, while the kernel skips it. The f8
+        promotion matches the kernel's accumulator, so f4 input agrees to the
+        bit instead of drifting by a ULP.
+        """
+        return ds.assign(
+            {
+                str(name): (
+                    da if (f := self._fill_of(str(name))) is None else da.where(da != f)
+                ).astype("f8")
+                for name, da in ds.data_vars.items()
+                if self._is_coarsened(da)
+            }
+        )
+
+    def _restore(self, ds: xr.Dataset, dtypes: dict[str, Any]) -> xr.Dataset:
+        """Undo the masking and the f8 promotion, matching the kernel's cast.
+
+        Order matters: ``fillna`` must precede the cast, since NaN cannot
+        survive into an integer dtype, and the clip must too -- the kernel
+        saturates an out-of-range accumulator (an integer ``sum``) where a bare
+        numpy cast would wrap. Casting back also keeps ``self.encoding`` (sized
+        from the source itemsize) correct for this path.
+        """
+        restored = {}
+        for name, da in ds.data_vars.items():
+            if not self._is_coarsened(self.source[name]):
+                continue
+            dtype = dtypes[str(name)]
+            fill = self._fill_of(str(name))
+            if fill is not None:
+                da = da.fillna(fill)
+            if np.issubdtype(dtype, np.integer):
+                info = np.iinfo(dtype)
+                da = da.clip(info.min, info.max)
+            restored[str(name)] = da.astype(dtype)
+        return ds.assign(restored)
+
     def _coarsen_chain(self) -> list[xr.Dataset]:
         """Lazily-chained coarsened datasets, one per level (xarray.coarsen).
 
         Each level coarsens the previous one by the per-step ratio
-        ``factors[i] // factors[i-1]`` along both spatial dims.
+        ``factors[i] // factors[i-1]`` along both spatial dims, then restores
+        the source dtype and fill value so the values match ``write``.
+
+        Every variable is promoted to ``f8`` for the duration of each coarsen
+        (matching the kernel's accumulator; 8x memory on ``u1``) and cast
+        straight back -- the promotion is never materialized on the source.
         """
+        if self.method != "nearest" and self.method not in XR_COARSEN_METHODS:
+            raise NotImplementedError(
+                f"as_datatree cannot express method {self.method!r}: xarray.coarsen "
+                "has no such reduction. Use Pyramid.write, which runs the kernel."
+            )
+        dtypes = {str(n): da.dtype for n, da in self.source.data_vars.items()}
         ds_chain: list[xr.Dataset] = [self.source]
         for lvl in range(1, self.levels):
             step = self._step(lvl)
@@ -559,9 +637,12 @@ class Pyramid:
                 coarsened = self._decimate(prev, step)
             else:
                 coarsened = getattr(
-                    prev.coarsen({self.x_dim: step, self.y_dim: step}, boundary="trim"),
+                    self._prepare(prev).coarsen(
+                        {self.x_dim: step, self.y_dim: step}, boundary="trim"
+                    ),
                     self.method,
                 )()
+                coarsened = self._restore(coarsened, dtypes)
             ds_chain.append(coarsened)
         return ds_chain
 
@@ -598,6 +679,15 @@ class Pyramid:
         dt.to_zarr(store, zarr_format=3, consolidated=False,
                    encoding=pyramid.encoding)
         ```
+
+        Values match [write][topozarr.pyramid.Pyramid.write] exactly, source
+        dtype and ``_FillValue`` included, at the cost of an ``f8`` intermediate
+        through each coarsen. The exception is an ``f8`` source, where the two
+        differ by under 1 ULP on `mean`/`sum` (window summation order).
+
+        Raises:
+            NotImplementedError: If ``method`` has no ``xarray.coarsen``
+                equivalent. Use `write` for those.
         """
         ds_chain = self._coarsen_chain()
 

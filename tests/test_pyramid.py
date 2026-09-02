@@ -6,6 +6,7 @@ import zarr
 
 from topozarr.coarsen import create_pyramid
 from topozarr.metadata import ZarrLayerVarConfig
+from topozarr.pyramid import XR_COARSEN_METHODS
 
 
 def test_pyramid_structure(create_dataset):
@@ -456,10 +457,11 @@ def test_as_datatree_matches_native(create_dataset):
     native_dt = xr.open_datatree(native_store, engine="zarr", consolidated=False)
     written_dt = xr.open_datatree(dt_store, engine="zarr", consolidated=False)
     for lvl in ("0", "1", "2"):
-        np.testing.assert_allclose(
+        # exact: the datatree path coarsens in f8 like the kernel, then casts
+        # back to the source f4
+        np.testing.assert_array_equal(
             native_dt[lvl].ds.elevation.values,
             written_dt[lvl].ds.elevation.values,
-            rtol=1e-5,
         )
 
 
@@ -581,3 +583,231 @@ def test_non_spatial_2d_coord_is_allowed(create_dataset):
     store = zarr.storage.MemoryStore()
     pyramid.write(store)
     assert "quality" in xr.open_zarr(store, group="1", consolidated=False).coords
+
+
+# --- as_datatree / write parity -----------------------------------------
+#
+# Same Pyramid, two materialization paths: the Rust kernel (write) and
+# xarray.coarsen (as_datatree). They agreed only by accident before -- the
+# original test used f4 with no _FillValue, the one case where xarray's
+# promotion and fill-blindness are both invisible.
+
+PARITY_DTYPES = [("i2", None), ("i4", None), ("u1", 255), ("f4", None), ("f4", -9999.0)]
+
+
+def _parity_dataset(dtype, fill, n=16, seed=0):
+    """Spatial dataset with ~20% of cells set to ``fill``."""
+    rng = np.random.default_rng(seed)
+    if np.issubdtype(np.dtype(dtype), np.integer):
+        lo = -100 if np.dtype(dtype).kind == "i" else 0
+        data = rng.integers(lo, 200, (n, n)).astype(dtype)
+    else:
+        data = ((rng.random((n, n)) - 0.5) * 200).astype(dtype)
+    if fill is not None:
+        data[rng.random((n, n)) < 0.2] = fill
+    ds = xr.Dataset(
+        {"elev": (("y", "x"), data)},
+        coords={"x": np.arange(n, dtype="f8"), "y": np.arange(n, dtype="f8")},
+    ).proj.assign_crs(spatial_ref="EPSG:4326")
+    if fill is not None:
+        ds.elev.attrs["_FillValue"] = fill
+    return ds
+
+
+def _written(pyramid, name="elev"):
+    """Levels as ``write`` put them in the store, read back without decoding.
+
+    Read through zarr rather than xarray: CF decoding would mask the fill
+    value and re-promote the dtype, hiding the divergence under test.
+    """
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+    root = zarr.open_group(store, mode="r")
+    return [root[f"{lvl}/{name}"][:] for lvl in range(pyramid.levels)]
+
+
+@pytest.mark.parametrize("dtype,fill", PARITY_DTYPES)
+@pytest.mark.parametrize("method", ["mean", "max", "min", "sum", "nearest"])
+def test_as_datatree_matches_write(dtype, fill, method):
+    pyramid = create_pyramid(_parity_dataset(dtype, fill), levels=3, method=method)
+    native = _written(pyramid)
+    dt = pyramid.as_datatree()
+    for lvl, expected in enumerate(native):
+        got = dt[str(lvl)].ds.elev.values
+        assert got.dtype == expected.dtype, f"level {lvl} dtype"
+        np.testing.assert_array_equal(got, expected, err_msg=f"level {lvl}")
+
+
+@pytest.mark.parametrize("method", ["mean", "sum"])
+def test_as_datatree_f8_matches_write_to_rounding(method):
+    # f8 is the one dtype that cannot be exact: both paths accumulate in f64,
+    # but the kernel sums a window in order while numpy sums pairwise. Under
+    # 1 ULP, and not something either side should chase.
+    pyramid = create_pyramid(_parity_dataset("f8", None), levels=3, method=method)
+    native = _written(pyramid)
+    dt = pyramid.as_datatree()
+    for lvl, expected in enumerate(native):
+        np.testing.assert_allclose(
+            dt[str(lvl)].ds.elev.values, expected, rtol=1e-14, err_msg=f"level {lvl}"
+        )
+
+
+def test_as_datatree_skips_fill_value():
+    # Regression: xarray.coarsen averaged the sentinel in as data.
+    ds = xr.Dataset(
+        {"elev": (("y", "x"), np.array([[1, 255], [5, 6]], dtype="u1"))},
+        coords={"x": np.arange(2, dtype="f8"), "y": np.arange(2, dtype="f8")},
+    ).proj.assign_crs(spatial_ref="EPSG:4326")
+    ds.elev.attrs["_FillValue"] = 255
+
+    dt = create_pyramid(ds, levels=2, method="mean").as_datatree()
+    assert dt["1"].ds.elev.values.tolist() == [[4]]  # mean(1, 5, 6), not mean(..255)
+
+
+def test_as_datatree_all_fill_window_is_fill():
+    ds = xr.Dataset(
+        {"elev": (("y", "x"), np.full((2, 2), 255, dtype="u1"))},
+        coords={"x": np.arange(2, dtype="f8"), "y": np.arange(2, dtype="f8")},
+    ).proj.assign_crs(spatial_ref="EPSG:4326")
+    ds.elev.attrs["_FillValue"] = 255
+
+    pyramid = create_pyramid(ds, levels=2, method="mean")
+    np.testing.assert_array_equal(
+        pyramid.as_datatree()["1"].ds.elev.values, _written(pyramid)[1]
+    )
+
+
+def test_as_datatree_integer_sum_saturates():
+    # A u1 sum overflows on the second level; the kernel saturates on cast, so
+    # the datatree path must clip rather than let numpy wrap.
+    pyramid = create_pyramid(_parity_dataset("u1", None), levels=3, method="sum")
+    coarse = pyramid.as_datatree()["2"].ds.elev.values
+    assert coarse.dtype == np.dtype("u1")
+    assert (coarse == 255).any()
+    np.testing.assert_array_equal(coarse, _written(pyramid)[2])
+
+
+def test_as_datatree_keeps_source_dtype(create_dataset):
+    ds = create_dataset(nx=16, ny=16)
+    ds["elevation"] = ds.elevation.astype("i2")
+    dt = create_pyramid(ds, levels=3).as_datatree()
+    # xarray.coarsen would have promoted these to f8
+    assert all(dt[lvl].ds.elevation.dtype == np.dtype("i2") for lvl in ("0", "1", "2"))
+
+
+def test_as_datatree_leaves_non_spatial_vars_alone(create_dataset):
+    ds = create_dataset(nx=16, ny=16, extra_dims={"time": 3})
+    ds["label"] = ("time", np.array(["a", "b", "c"], dtype=object))
+    dt = create_pyramid(ds, levels=2).as_datatree()
+    assert dt["1"].ds.label.values.tolist() == ["a", "b", "c"]
+
+
+def test_as_datatree_rejects_unexpressible_method(create_dataset):
+    pyramid = create_pyramid(create_dataset(nx=8, ny=8), levels=2)
+    pyramid.method = "mode"  # a kernel method with no xarray.coarsen equivalent
+    assert "mode" not in XR_COARSEN_METHODS
+    with pytest.raises(NotImplementedError, match="as_datatree cannot express"):
+        pyramid.as_datatree()
+
+
+def test_every_kernel_method_is_expressible_or_refused(create_dataset):
+    # Guards the dispatch: a method the kernel gains must either be listed in
+    # XR_COARSEN_METHODS or refused explicitly -- never fall through to a bare
+    # getattr and raise AttributeError.
+    from topozarr_core import METHODS
+
+    ds = create_dataset(nx=8, ny=8)
+    for method in METHODS:
+        pyramid = create_pyramid(ds, levels=2, method=method)
+        try:
+            pyramid.as_datatree()
+        except NotImplementedError:
+            assert method not in XR_COARSEN_METHODS and method != "nearest"
+
+
+@pytest.mark.parametrize("method", ["mean", "max", "min", "sum", "nearest"])
+def test_as_datatree_matches_write_with_extra_dims(method):
+    # Two vars in one dataset, different dtypes and only one with a fill:
+    # exercises the per-variable mask/restore rather than a dataset-wide cast.
+    rng = np.random.default_rng(1)
+    n = 16
+    elev = rng.integers(0, 200, (3, n, n)).astype("u1")
+    elev[rng.random((3, n, n)) < 0.2] = 255
+    ds = xr.Dataset(
+        {
+            "elev": (("time", "y", "x"), elev),
+            "temp": (
+                ("time", "y", "x"),
+                ((rng.random((3, n, n)) - 0.5) * 100).astype("f4"),
+            ),
+        },
+        coords={
+            "x": np.arange(n, dtype="f8"),
+            "y": np.arange(n, dtype="f8"),
+            "time": np.arange(3),
+        },
+    ).proj.assign_crs(spatial_ref="EPSG:4326")
+    ds.elev.attrs["_FillValue"] = 255
+
+    pyramid = create_pyramid(ds, levels=3, method=method)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+    root = zarr.open_group(store, mode="r")
+    dt = pyramid.as_datatree()
+    for lvl in range(3):
+        for var in ("elev", "temp"):
+            got = dt[str(lvl)].ds[var].values
+            expected = root[f"{lvl}/{var}"][:]
+            assert got.dtype == expected.dtype, f"{var} level {lvl} dtype"
+            np.testing.assert_array_equal(got, expected, err_msg=f"{var} level {lvl}")
+
+
+def test_as_datatree_matches_write_sparse_factors():
+    pyramid = create_pyramid(_parity_dataset("u1", 255), factors=[1, 4], method="mean")
+    native = _written(pyramid)
+    dt = pyramid.as_datatree()
+    for lvl, expected in enumerate(native):
+        np.testing.assert_array_equal(dt[str(lvl)].ds.elev.values, expected)
+
+
+def test_as_datatree_stays_lazy(create_dataset):
+    # The whole point of this path is a lazy tree for a distributed write; the
+    # mask/promote/cast must not pull anything into memory.
+    ds = create_dataset(nx=32, ny=32)
+    ds["elevation"] = ds.elevation.astype("i2")
+    ds = ds.chunk({"y": 16, "x": 16})
+
+    dt = create_pyramid(ds, levels=3).as_datatree()
+    for lvl in ("0", "1", "2"):
+        assert dt[lvl].ds.elevation.chunks is not None, f"level {lvl} computed eagerly"
+        assert dt[lvl].ds.elevation.dtype == np.dtype("i2")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="write leaves a variable over exactly one spatial dim uncomputed "
+    "(all-NaN above level 0); as_datatree coarsens it correctly. Write-path "
+    "bug, tracked in planning/review-2026-09-02.md -- flip this to a plain "
+    "test when it lands.",
+)
+def test_as_datatree_matches_write_partly_spatial_var():
+    n = 16
+    ds = xr.Dataset(
+        {
+            "elev": (("y", "x"), np.arange(n * n, dtype="f4").reshape(n, n)),
+            "profile": (("time", "x"), np.arange(3 * n, dtype="i2").reshape(3, n)),
+        },
+        coords={
+            "x": np.arange(n, dtype="f8"),
+            "y": np.arange(n, dtype="f8"),
+            "time": np.arange(3),
+        },
+    ).proj.assign_crs(spatial_ref="EPSG:4326")
+
+    pyramid = create_pyramid(ds, levels=2, method="mean")
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+    root = zarr.open_group(store, mode="r")
+    np.testing.assert_array_equal(
+        pyramid.as_datatree()["1"].ds.profile.values, root["1/profile"][:]
+    )

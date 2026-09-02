@@ -30,7 +30,12 @@ There are two ways to materialize the plan:
   pool (not Dask). The rest of this document describes this path.
 - **`Pyramid.as_datatree`**: returns a lazy `xr.DataTree` (levels coarsened via
   `xarray.coarsen`) for Dask-distributed writes. You call `to_zarr` yourself,
-  passing `pyramid.encoding`.
+  passing `pyramid.encoding`. It reproduces the kernel's semantics — each
+  coarsen runs on an `f8` promotion with `_FillValue` masked to NaN, then the
+  result is refilled, clipped and cast back to the source dtype — so both paths
+  write the same bytes. A method with no `xarray.coarsen` equivalent (`nearest`
+  aside, which has its own decimation path) raises `NotImplementedError` here
+  rather than silently dispatching.
 
 ## Chunk and shard heuristics
 

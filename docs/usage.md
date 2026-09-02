@@ -110,6 +110,12 @@ dt.to_zarr("pyramid.zarr", zarr_format=3, consolidated=False,
            encoding=pyramid.encoding)
 ```
 
+This path produces the same values and dtypes as `write()`, `_FillValue`
+handling included. Each coarsen runs on an `f8` promotion to match the kernel's
+accumulator, so a `u1` variable is momentarily 8x its stored size — bounded by
+the dask block, not the array. An `f8` source is the one case the two paths
+differ, by under 1 ULP on `mean`/`sum`.
+
 ## Progress and memory
 
 Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written regions (requires `tqdm` to be installed):
