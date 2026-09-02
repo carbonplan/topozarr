@@ -5,8 +5,9 @@ use numpy::{
 };
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyTuple;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum Method {
     Mean,
     Max,
@@ -16,17 +17,41 @@ enum Method {
 }
 
 impl Method {
+    /// The one place a coarsening method is named. Drives `parse`, the error
+    /// message, and the `METHODS` tuple the Python layer validates against, so
+    /// a new variant cannot be half-added.
+    const ALL: &'static [(&'static str, Method)] = &[
+        ("mean", Method::Mean),
+        ("max", Method::Max),
+        ("min", Method::Min),
+        ("sum", Method::Sum),
+        ("nearest", Method::Nearest),
+    ];
+
+    fn names() -> Vec<&'static str> {
+        Self::ALL.iter().map(|(name, _)| *name).collect()
+    }
+
+    /// `'mean', 'max', ...` -- the method list as it appears in errors.
+    fn names_display() -> String {
+        Self::names()
+            .iter()
+            .map(|n| format!("'{n}'"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     fn parse(s: &str) -> PyResult<Self> {
-        match s {
-            "mean" => Ok(Method::Mean),
-            "max" => Ok(Method::Max),
-            "min" => Ok(Method::Min),
-            "sum" => Ok(Method::Sum),
-            "nearest" => Ok(Method::Nearest),
-            _ => Err(PyValueError::new_err(format!(
-                "method must be one of 'mean', 'max', 'min', 'sum', 'nearest'; got {s:?}"
-            ))),
-        }
+        Self::ALL
+            .iter()
+            .find(|(name, _)| *name == s)
+            .map(|(_, method)| *method)
+            .ok_or_else(|| {
+                PyValueError::new_err(format!(
+                    "method must be one of {}; got {s:?}",
+                    Self::names_display()
+                ))
+            })
     }
 }
 
@@ -233,6 +258,7 @@ fn block_reduce<'py>(
 #[pymodule]
 fn topozarr_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(block_reduce, m)?)?;
+    m.add("METHODS", PyTuple::new(m.py(), Method::names())?)?;
     Ok(())
 }
 
@@ -240,6 +266,26 @@ fn topozarr_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
 mod tests {
     use super::*;
     use ndarray::array;
+
+    #[test]
+    fn methods_names_match_parse() {
+        // every exported name parses, and nothing else does
+        for name in Method::names() {
+            assert!(Method::parse(name).is_ok(), "{name} does not parse");
+        }
+        assert_eq!(Method::names().len(), Method::ALL.len());
+        assert!(Method::parse("median").is_err());
+    }
+
+    #[test]
+    fn error_text_lists_every_method() {
+        // PyErr::to_string needs an interpreter, so assert on the message
+        // fragment parse() embeds rather than on the error itself
+        let listed = Method::names_display();
+        for name in Method::names() {
+            assert!(listed.contains(name), "error text omits {name}: {listed}");
+        }
+    }
 
     #[test]
     fn methods_basic_2x2() {

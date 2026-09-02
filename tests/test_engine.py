@@ -4,12 +4,23 @@ import numpy as np
 import pytest
 import xarray as xr
 import zarr
-from topozarr_core import block_reduce
+from topozarr_core import METHODS, block_reduce
 
 from topozarr.coarsen import create_pyramid
 from topozarr.engine import copy_array, copy_region_shape, downsample_level
 
-METHODS = ["mean", "max", "min", "sum"]
+# Methods with an xarray.coarsen equivalent, so a reference can be computed.
+# `nearest` is excluded because xarray has no such reduction -- it is covered
+# by the dedicated _nearest_reference tests below. Kept as a subset of the
+# kernel's own list rather than a fourth hand-written copy.
+XR_METHODS = [m for m in METHODS if m != "nearest"]
+
+
+def test_xr_methods_are_kernel_methods():
+    """Guard the exclusion list: anything new in the kernel is either
+    xarray-comparable (and belongs in XR_METHODS) or needs its own reference."""
+    assert set(XR_METHODS) <= set(METHODS)
+    assert set(METHODS) - set(XR_METHODS) == {"nearest"}
 
 
 def _xr_reference(a: np.ndarray, stride: tuple[int, ...], method: str) -> np.ndarray:
@@ -19,7 +30,7 @@ def _xr_reference(a: np.ndarray, stride: tuple[int, ...], method: str) -> np.nda
     return getattr(da.coarsen(windows, boundary="trim"), method)().values
 
 
-@pytest.mark.parametrize("method", METHODS)
+@pytest.mark.parametrize("method", XR_METHODS)
 @pytest.mark.parametrize(
     "shape", [(8, 8), (101, 100), (7, 5), (3,), (2, 16, 17), (2, 3, 8, 8)]
 )
@@ -33,7 +44,7 @@ def test_block_reduce_matches_xarray_float(method, shape):
     assert got.dtype == a.dtype
 
 
-@pytest.mark.parametrize("method", METHODS)
+@pytest.mark.parametrize("method", XR_METHODS)
 @pytest.mark.parametrize("dtype", ["f4", "f8"])
 def test_block_reduce_skipna_matches_xarray(method, dtype):
     rng = np.random.default_rng(0)
@@ -333,7 +344,7 @@ def test_copy_array_lazy_zarr_source():
     np.testing.assert_array_equal(dst[:], data)
 
 
-@pytest.mark.parametrize("method", METHODS)
+@pytest.mark.parametrize("method", XR_METHODS)
 def test_pyramid_parity_with_xarray(create_dataset, method):
     """Full-pipeline parity: written levels match coarsen(boundary='trim')."""
     ds = create_dataset(nx=37, ny=41)

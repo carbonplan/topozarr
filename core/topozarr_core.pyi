@@ -9,3 +9,6 @@ def block_reduce(
     fill_value: float | None = None,
     skipna: bool = True,
 ) -> npt.NDArray[Any]: ...
+
+METHODS: tuple[str, ...]
+"""Coarsening methods this kernel implements, in `block_reduce`'s `method` order."""

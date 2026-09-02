@@ -480,3 +480,104 @@ def test_fused_hook_clamps_trailing_window():
 
     expected = src[:8, :].reshape(4, 2, 4, 2).mean(axis=(1, 3))
     np.testing.assert_array_equal(target, expected)
+
+
+def test_method_literal_matches_kernel():
+    """The Literal and the kernel's METHODS must not drift apart."""
+    from typing import get_args
+
+    import topozarr_core
+
+    from topozarr.pyramid import CoarseningMethod
+
+    assert set(get_args(CoarseningMethod)) == set(topozarr_core.METHODS)
+
+
+@pytest.mark.parametrize("method", ["median", "mode", "Mean", "", "avg"])
+def test_invalid_method_raises_at_plan_time(create_dataset, method):
+    with pytest.raises(ValueError, match="method must be one of"):
+        create_pyramid(create_dataset(), levels=2, method=method)
+
+
+def test_invalid_method_writes_nothing(create_dataset):
+    """A method edited onto the plan is caught before any level is written.
+
+    Regression: validation used to live only in the kernel, which sees the
+    method on the first *coarsened* level -- after level 0 is in the store.
+    """
+    pyramid = create_pyramid(create_dataset(), levels=3)
+    pyramid.method = "median"
+    store = zarr.storage.MemoryStore()
+
+    with pytest.raises(ValueError, match="method must be one of"):
+        pyramid.write(store)
+
+    assert list(store._store_dict) == []
+
+
+def test_invalid_method_rejected_on_construction(create_dataset):
+    from topozarr.pyramid import Pyramid
+
+    with pytest.raises(ValueError, match="method must be one of"):
+        Pyramid(
+            source=create_dataset(),
+            level_templates={},
+            encoding={},
+            attrs={},
+            x_dim="x",
+            y_dim="y",
+            method="median",
+        )
+
+
+@pytest.mark.parametrize("method", ["mean", "max", "min", "sum", "nearest"])
+def test_every_kernel_method_is_accepted(create_dataset, method):
+    pyramid = create_pyramid(create_dataset(), levels=2, method=method)
+    pyramid.write(zarr.storage.MemoryStore())
+
+
+def test_curvilinear_coords_raise(create_dataset):
+    """2-D spatial coords are rejected at the boundary, not deep in xarray.
+
+    They are not coarsened: the template builder would leave them at native
+    shape (an opaque 'conflicting sizes' ValueError) and as_datatree's
+    _decimate would corner-stride them into a mis-registered grid.
+    """
+    ds = create_dataset(nx=16, ny=16)
+    ds = ds.assign_coords(
+        lat=(("y", "x"), np.random.rand(16, 16)),
+        lon=(("y", "x"), np.random.rand(16, 16)),
+    )
+
+    with pytest.raises(ValueError, match="2-D over the spatial dims"):
+        create_pyramid(ds, levels=2)
+
+
+def test_curvilinear_message_names_the_coords(create_dataset):
+    ds = create_dataset(nx=16, ny=16).assign_coords(
+        lat=(("y", "x"), np.random.rand(16, 16))
+    )
+
+    with pytest.raises(ValueError, match="drop_vars") as excinfo:
+        create_pyramid(ds, levels=2)
+    assert "lat" in str(excinfo.value)
+
+
+def test_partly_spatial_2d_coord_raises(create_dataset):
+    """A 2-D coord touching only one spatial dim still needs coarsening."""
+    ds = create_dataset(nx=16, ny=16, extra_dims={"time": 3})
+    ds = ds.assign_coords(drift=(("time", "x"), np.random.rand(3, 16)))
+
+    with pytest.raises(ValueError, match="2-D over the spatial dims"):
+        create_pyramid(ds, levels=2)
+
+
+def test_non_spatial_2d_coord_is_allowed(create_dataset):
+    """Only coords over a *spatial* dim are rejected; others pass through."""
+    ds = create_dataset(nx=16, ny=16, extra_dims={"time": 3, "band": 2})
+    ds = ds.assign_coords(quality=(("time", "band"), np.random.rand(3, 2)))
+
+    pyramid = create_pyramid(ds, levels=2)
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+    assert "quality" in xr.open_zarr(store, group="1", consolidated=False).coords

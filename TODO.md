@@ -5,17 +5,16 @@ Future work, roughly by value:
 - CHANGELOG.md: backfill from git tags (Keep a Changelog format), update per
   release.
 - `mode` (majority) reduction for categorical rasters — design in
-  [planning.md](planning.md); `median` would ride the same from-native path.
+  [planning/mode-coarsening.md](planning/mode-coarsening.md); `median` would ride the same from-native path.
 - CI: test on macOS (wheels ship for mac/Windows but only Ubuntu is tested);
   coverage reporting (pytest-cov + codecov).
 - Benchmark suite (asv or pytest-benchmark) to guard kernel and streaming
   perf regressions.
 - Overwrite/resume semantics for partially written pyramids (e.g. skip
   regions already present when `mode="a"`).
-- 2-D spatial coords (e.g. curvilinear `lat(y, x)`) are not coarsened:
-  `_coarsen_template` passes them through at native shape and
-  `Pyramid._decimate` corner-strides them. Affects all methods; either
-  coarsen them properly or reject them at `create_pyramid`.
+- 2-D spatial coords (e.g. curvilinear `lat(y, x)`) are rejected at
+  `create_pyramid` as of 0.1.7. Coarsening them properly (rather than making
+  the user drop them) is still open.
 
 Done (2026-07-13): review fixes — `levels` predecessor validation, mode="w"
 subset guard, rust writer flush-on-error, int-mean truncation docs, `ty` type

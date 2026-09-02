@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Fixed
+
+- `create_pyramid` now validates `method` when the plan is built instead of
+  letting the Rust kernel reject it on the first *coarsened* level — by which
+  point level 0 was already written to the store. `Pyramid.write` re-checks,
+  so editing `pyramid.method` after planning is caught too, and a rejected
+  write leaves the store untouched.
+
+  The valid set comes from the installed kernel (`topozarr_core.METHODS`, new
+  in core 0.1.7), not from a second list on the Python side. That is the check
+  [#26](https://github.com/carbonplan/topozarr/issues/26) called for: a
+  `topozarr` advertising a method its linked `topozarr-core` does not
+  implement now fails at plan time.
+
+- `create_pyramid` rejects datasets whose spatial coordinates are 2-D
+  (curvilinear grids, e.g. `lat(y, x)`). They were never coarsened: the level
+  templates left them at native resolution, which surfaced as an opaque
+  xarray `conflicting sizes for dimension` error, and `as_datatree` silently
+  corner-strided them into a mis-registered grid. The error now names the
+  coordinates and points at `ds.drop_vars`.
+
 ### Added
 
 - `recommend_encoding(ds, x_dim=..., y_dim=...)` returns the chunk/shard

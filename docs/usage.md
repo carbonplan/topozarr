@@ -34,6 +34,24 @@ pyramid = create_pyramid(ds, factors=[1, 4, 16])
 
 Levels are always named sequentially (`0, 1, 2, …`) regardless of `factors`; the downsample factor isn't in the node name but in the multiscales metadata (`layout[i].transform.scale` and each level's `spatial:transform`).
 
+## Input requirements
+
+`create_pyramid` validates these when the plan is built, so a bad input fails
+before anything is written:
+
+- **`method`** must be one of `mean`, `max`, `min`, `sum`, `nearest` — checked
+  against `topozarr_core.METHODS`, the list the installed kernel actually
+  implements.
+- **Spatial coordinates must be 1-D** and uniformly spaced. Curvilinear grids
+  (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected: topozarr coarsens 1-D
+  coordinates only, so 2-D ones would be left at native resolution and
+  mis-register the coarsened levels. Reproject to a regular grid first, or
+  drop them with `ds.drop_vars(["lat", "lon"])` if they are redundant.
+- **Spatial variables** are limited to 4 dimensions (the kernel's limit). Use
+  `as_datatree()` for the xarray/Dask path, which lifts it.
+
+Coordinates over non-spatial dimensions are untouched, 2-D or not.
+
 ## Single-resolution datasets (no pyramid)
 
 Low-resolution datasets don't need a pyramid. Two functions cover the flat path:
