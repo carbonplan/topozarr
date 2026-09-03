@@ -11,13 +11,3 @@ The public API is five objects: `create_pyramid` builds a write plan, `Pyramid` 
 ::: topozarr.metadata.recommend_encoding
 
 ::: topozarr.metadata.ZarrLayerVarConfig
-
-## Engine
-
-Lower-level streaming drivers used by `Pyramid.write`; useful when writing custom pipelines on top of the kernel.
-
-::: topozarr.engine.downsample_level
-
-::: topozarr.engine.copy_array
-
-::: topozarr.engine.default_max_workers
