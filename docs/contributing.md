@@ -24,7 +24,7 @@ uv run pytest -n auto -m conformance
 Lint and format:
 
 ```bash
-uv run pre-commit run --all-files
+uv run prek run --all-files
 ```
 
 To regenerate the demo datasets in S3 (requires AWS credentials), install the `tutorial` extra and run the build script:

@@ -30,8 +30,8 @@ jobs:
       - name: Check topozarr-core pin matches core version
         run: uv run python scripts/check_core_pin.py
 
-      - name: Run pre-commit
-        run: uv run pre-commit run --all-files
+      - name: Run prek
+        run: uv run prek run --all-files
 
       - name: Type check
         run: uv run ty check src/

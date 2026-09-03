@@ -1,8 +1,13 @@
+---
+hide:
+  - toc
+---
+
 # topozarr
 
 Create multiscale Zarr stores for web visualization.
 
-Built for use with [zarr-layer](https://zarr-layer.demo.carbonplan.org/). Tries to follow the GeoZarr spec, which is composed of these Zarr conventions:
+Built for use with [zarr-layer](https://zarr-layer.demo.carbonplan.org/). Follows the [zarr-conventions](https://github.com/zarr-conventions):
 
 - [multiscales](https://github.com/zarr-conventions/multiscales) — pyramid structure and resolution levels
 - [proj:](https://github.com/zarr-conventions/geo-proj) — coordinate reference system (CRS)
