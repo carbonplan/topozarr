@@ -11,7 +11,7 @@ dependencies = [
     # exact pin: the Python layer and the Rust kernel ship as separate
     # distributions but are one unit; a range lets a resolver pair a new
     # topozarr with an old core that lacks the kernel arm it accepts.
-    "topozarr-core==0.1.7",
+    "topozarr-core==0.1.8",
     "xarray>=2025.9.0",
     "xproj>=0.2.1",
     "zarr>=3.2.1",
