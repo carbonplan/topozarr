@@ -5,7 +5,7 @@
 
 ### Create Multiscale Zarr stores
 
-Python library companion to the typescript web mapping tool [zarr-layer](https://zarr-layer.demo.carbonplan.org/). Use it to create GeoZarr compliant multiscales / pyramids / overviews for Zarr stores for usage with web mapping.
+Python library companion to the TypeScript web mapping tool [zarr-layer](https://zarr-layer.demo.carbonplan.org/). Use it to create GeoZarr-compliant multiscales / pyramids / overviews for Zarr stores for use with web mapping.
 
 Follows the [zarr-conventions](https://github.com/zarr-conventions):
 
@@ -36,7 +36,7 @@ pip install 'topozarr[tutorial]'
 
 ```python
 import xarray as xr
-import xproj # for crs assignment
+import xproj  # for CRS assignment
 from topozarr import create_pyramid
 
 # Load the air_temperature Xarray tutorial dataset
@@ -82,7 +82,7 @@ ds.to_zarr(
 ```
 
 ### Coming from ndpyramid
-The library [ndpyramid](https://github.com/carbonplan/ndpyramid) also builds multiscale Zarr stores. However, it was built as a companion for [carbonplan-maps](https://github.com/carbonplan/maps), which requires the source data to be reprojected to EPSG:3857, square (ex. 128x128), slippy-map-tile compliant shapes for usage with `carbonplan-maps`. The newer mapping library, [zarr-layer](https://zarr-layer.demo.carbonplan.org/), relaxes these requirements significantly, which simplifies the multiscales creation and allows topozarr to be much more simple and flexible. This project is essentially a coarsen call and some metadata in a trenchcoat. 
+The library [ndpyramid](https://github.com/carbonplan/ndpyramid) also builds multiscale Zarr stores. However, it was built as a companion for [carbonplan-maps](https://github.com/carbonplan/maps), which requires the source data to be reprojected to EPSG:3857, square (e.g. 128x128), slippy-map-tile-compliant shapes. The newer mapping library, [zarr-layer](https://zarr-layer.demo.carbonplan.org/), relaxes these requirements significantly, which simplifies multiscales creation and allows topozarr to be much simpler and more flexible. This project is essentially a coarsen call and some metadata in a trenchcoat.
 
 
 | ndpyramid | topozarr |
