@@ -26,44 +26,34 @@ pyramid.write("pyramid.zarr")
 
 `levels` is the total number of resolution levels including the original. Level `0` is the original (highest) resolution; each subsequent level is coarsened by 2× per spatial dimension.
 
-To build a sparse or non-uniform pyramid, pass `factors` instead of `levels` — explicit cumulative downsample factors per level, e.g. `factors=[1, 4, 16]` for native, 4×, and 16×. The list must start at `1`, be strictly increasing, and have each entry integer-divide the next. `levels=N` is equivalent to `factors=[1, 2, ..., 2**(N-1)]`.
+To build a non-uniform pyramid, pass `factors` instead of `levels` — explicit cumulative downsample factors per level, e.g. `factors=[1, 4, 16]` for native, 4×, and 16×.
 
 ```python
 pyramid = create_pyramid(ds, factors=[1, 4, 16])
 ```
 
-Levels are always named sequentially (`0, 1, 2, …`) regardless of `factors`; the downsample factor isn't in the node name but in the multiscales metadata (`layout[i].transform.scale` and each level's `spatial:transform`).
+Levels are always named sequentially (`0, 1, 2, …`) regardless of if you specify `factors`; the downsample factor isn't in the node name but in the multiscales metadata (`layout[i].transform.scale` and each level's `spatial:transform`).
 
 ## Input requirements
 
-`create_pyramid` validates these when the plan is built, so a bad input fails
+`create_pyramid` validates these when the plan is built, so a bad input should fail
 before anything is written:
 
 - **`method`** must be one of `mean`, `max`, `min`, `sum`, `nearest` — checked
-  against `topozarr_core.METHODS`, the list the installed kernel actually
-  implements.
+  against `topozarr_core.METHODS`.
 - **Spatial coordinates must be 1-D** and uniformly spaced. Curvilinear grids
-  (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected: topozarr coarsens 1-D
-  coordinates only, so 2-D ones would be left at native resolution and
-  mis-register the coarsened levels. Reproject to a regular grid first, or
-  drop them with `ds.drop_vars(["lat", "lon"])` if they are redundant.
-- **Spatial variables** are limited to 4 dimensions (the kernel's limit). Use
-  `as_datatree()` for the xarray/Dask path, which lifts it.
-- **Non-numeric variables over a spatial dim** (string labels, datetimes) are
-  rejected: neither path can reduce them. Drop them with `ds.drop_vars([...])`.
-
-A variable over only *one* spatial dim — a per-column `profile(time, x)`, say —
-is coarsened along that dim alone, on both `write` and `as_datatree`. Variables
-and coordinates over neither spatial dimension are untouched, 2-D or not.
+  (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected.
+- **Spatial variables** are limited to 4 dimensions.
 
 ## Single-resolution datasets (no pyramid)
 
-Low-resolution datasets don't need a pyramid. Two functions cover the flat path:
+Lower-resolution datasets often don't need overviews to be visualized with `zarr-layer`. `topozarr` provides two functions that can help visualize Zarr stores without overviews.
 `attach_geozarr_metadata` returns the dataset with the geozarr convention attrs
-(`proj:*`, `spatial:*`, `zarr_conventions`) attached — no coarsening, no `/0`
-nesting, no `multiscales` attr — and `recommend_encoding` returns the same
-chunk/shard heuristic `create_pyramid` applies per level. Write it as a flat
-zarr group yourself:
+(`proj:*`, `spatial:*`, `zarr_conventions`) attached and `recommend_encoding` returns the same
+chunk/shard heuristic `create_pyramid` applies per level.
+`zarr-layer` can render stores without overviews as long as the chunking is friendly for web mapping, so this is a real option and not just a
+data-production convenience. Just remember that there are no overviews, so a zoomed-out read
+still pulls the full resolution.
 
 ```python
 from topozarr import attach_geozarr_metadata, recommend_encoding
@@ -77,61 +67,15 @@ ds.to_zarr(
 )
 ```
 
-zarr-layer renders a flat group, so this is a real option and not just a
-data-production convenience — but there are no overviews, so a zoomed-out read
-still pulls full resolution.
-
-`create_pyramid(levels=1)` is **not** the way to get a flat dataset: it still
-produces `/0` nesting and a one-entry `multiscales` attr.
-
-CRS is read from the dataset (xproj) or passed explicitly via `crs="EPSG:4326"`.
-Visualization hints work the same as `create_pyramid` via `layer_hints`.
-`recommend_encoding` needs no CRS — the encoding depends only on shape and
-dtype. It covers variables over at least one spatial dim — one with only a
-single spatial dim is sized along that dim alone; anything over neither falls
-through to xarray's defaults.
-
-For a **dask-backed** dataset, xarray's `safe_chunks` check requires the zarr
-write unit — the *shard*, when sharding is on — to divide the dask block.
-`recommend_encoding` treats `chunks_per_shard` as an upper bound and flexes it
-down until a shard does, so the snippet above writes a dask source as is.
-
-The exception is a source chunk too small to divide into a chunk of usable size
-(under ~128 elements, or under half the ideal chunk). The recommendation keeps a
-read-aligned shard there, and such a write still needs a rechunk or
-`safe_chunks=False`:
-
-```python
-enc = recommend_encoding(ds)["elevation"]
-ds = ds.chunk(dict(zip(ds.elevation.dims, enc["shards"])))
-```
-
-A lazily opened zarr-backed dataset (`xr.open_dataset(..., chunks=None)`) is
-unaffected — nothing checks it.
-
 ## Dask distributed
 
-`write()` is **not** Dask — it streams regions through a local thread pool. For Dask-distributed writes, use `as_datatree()`, which returns a lazy `xr.DataTree` with all levels coarsened via `xarray.coarsen`. The recommended per-level chunking and sharding lives in `pyramid.encoding` (already shaped for `DataTree.to_zarr`) — don't forget to pass it!
+Pyramid `write()` does not use Dask — it streams regions through a local thread pool. For Dask-distributed writes, use `as_datatree()`, which returns a lazy `xr.DataTree` with all levels coarsened via `xarray.coarsen`. The recommended per-level chunking and sharding lives in `pyramid.encoding` (already shaped for `DataTree.to_zarr`) — don't forget to pass the recommended encoding in your `to_zarr(..., encoding=pyramid.encoding)` call.
 
 ```python
 dt = pyramid.as_datatree()
 dt.to_zarr("pyramid.zarr", zarr_format=3, consolidated=False,
            encoding=pyramid.encoding)
 ```
-
-This path produces the same values and dtypes as `write()`, `_FillValue`
-handling included. Each coarsen runs on an `f8` promotion to match the kernel's
-accumulator, so a `u1` variable is momentarily 8x its stored size — bounded by
-the dask block, not the array. An `f8` source is the one case the two paths
-differ, by under 1 ULP on `mean`/`sum`.
-
-`pyramid.encoding` is shard-aligned to the source chunking at every level, not
-just level 0, so this writes without `safe_chunks=False` as long as the
-coarsened dask blocks stay large enough to divide into a usable chunk — roughly
-half the ideal chunk size, ~181 elements for `f4` at the default target. Past
-that depth the levels fall out of alignment and need `safe_chunks=False`. A
-2000² `f4` source chunked at 1000 stays aligned for three levels; chunked at
-500 it aligns for two.
 
 ## Progress and memory
 
@@ -141,7 +85,7 @@ Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written 
 pyramid.write("pyramid.zarr", progress=True)
 ```
 
-The threadpool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 read regions on chunked sources. For bounded memory on large stores, open the source lazily (e.g. `xr.open_zarr(store, chunks=None)`). See [Design](design.md#streaming-memory-model).
+The threadpool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 read regions on chunked sources.
 
 Pass `keep_levels_in_memory=True` to keep levels in RAM and skip re-reading them from the store between levels (faster, but uses more memory). `None` (default) enables this automatically when subsequent levels fit in RAM.
 
@@ -167,7 +111,7 @@ Written into the root `zarr-layer` metadata key; nothing else changes.
 
 `pyramid.encoding` holds the chunk and shard sizes per variable per level; `pyramid.write` applies them automatically.
 
-The heuristics target ~500 KB chunks for web visualization. Tune shard size with `chunks_per_shard` — chunks per shard along each spatial dimension (default `4`). Valid values are powers of 2: `1, 2, 4, 8, 16, 32`. Larger shards mean fewer, bigger reads/writes and higher memory (shards are the unit of work — see [Design](design.md#chunk-and-shard-heuristics)).
+The heuristics target ~500 KB spatial chunks for web visualization. Tune shard size with `chunks_per_shard` — chunks per shard along each spatial dimension (default `4`). Valid values are powers of 2: `1, 2, 4, 8, 16, 32`. Larger shards mean fewer, bigger reads/writes and higher memory (shards are the unit of work — see [Design](design.md#chunk-and-shard-heuristics)).
 
 | `chunks_per_shard` | chunks/shard | approx shard size |
 |--------------------|:------------:|:-----------------:|
@@ -177,15 +121,6 @@ The heuristics target ~500 KB chunks for web visualization. Tune shard size with
 | 16 | 256 | ~128 MB |
 
 Pass `chunks_per_shard=None` to disable sharding entirely.
-
-### Coordinates
-
-A 1-D coordinate along a spatial dimension is chunked too, sized as a 1-D array
-against the same byte target (~65k `f8` elements at the default ~500 KB) rather
-than as a tile, and never sharded. Left to xarray's defaults it would be one
-chunk covering the whole array — fine at 10^4 elements, a multi-MB blocking read
-at 10^7. A coordinate that already fits in one chunk is left alone and does not
-appear in `pyramid.encoding`.
 
 ### Non-spatial dimensions
 
@@ -206,29 +141,13 @@ Repeat per level and variable. Zarr requires each shard to be a whole multiple o
 
 ## Writing backends
 
-`pyramid.write` accepts anything `zarr-python` can open — a local path, an `ObjectStore`, or an icechunk session store.
+`pyramid.write` accepts a local path, an `Obstore` store, or an `Icechunk` store.
 
-### Object storage
+### Local path
 
 ```python
-from obstore.store import from_url
-from zarr.storage import ObjectStore
-
-store = ObjectStore(
-    from_url(
-        "s3://carbonplan-scratch/topozarr/air.zarr",
-        region="us-west-2",
-        # defaults (5s connect / 30s total) can time out under heavy
-        # concurrency; symptom: GenericError with "Connect, TimedOut"
-        client_options={"connect_timeout": "30s", "timeout": "120s"},
-    )
-)
-# raise async concurrency for higher S3 throughput
-zarr.config.set({"async.concurrency": 128})
-pyramid.write(store, mode="w")
+pyramid.write("pyramid.zarr")
 ```
-
-If connect timeouts persist on large instances, lower the request fan-out (total in-flight requests is roughly `max_workers * async.concurrency`): reduce `async.concurrency` or pass a smaller `max_workers`.
 
 ### Icechunk
 
@@ -243,3 +162,33 @@ session = repo.writable_session("main")
 pyramid.write(session.store, mode="w")
 session.commit("write pyramid")
 ```
+
+### Obstore
+
+```python
+from obstore.store import from_url
+from zarr.storage import ObjectStore
+
+store = ObjectStore(from_url("s3://carbonplan-scratch/topozarr/air.zarr", region="us-west-2"))
+pyramid.write(store, mode="w")
+```
+
+**Tuning / troubleshooting:** `obstore`'s defaults (5s connect / 30s total) can time out under
+heavy concurrency, surfacing as `GenericError` with `"Connect, TimedOut"`. Raise them via
+`client_options`, and consider raising `zarr.config`'s `async.concurrency` for higher S3
+throughput:
+
+```python
+store = ObjectStore(
+    from_url(
+        "s3://carbonplan-scratch/topozarr/air.zarr",
+        region="us-west-2",
+        client_options={"connect_timeout": "30s", "timeout": "120s"},
+    )
+)
+zarr.config.set({"async.concurrency": 128})
+```
+
+If connect timeouts persist on large instances, try reducing `async.concurrency` or passing a
+smaller `max_workers`.
+

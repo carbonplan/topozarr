@@ -1,11 +1,13 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/carbonplan/topozarr/main/docs/logo_512x512.png" alt="topozarr" width="200">
+  <img src="https://raw.githubusercontent.com/carbonplan/topozarr/main/docs/topozarr_logo_name.png" alt="topozarr" width="200">
 </p>
 
 
-Python library to create multiscale Zarr stores for usage with [zarr-layer](https://zarr-layer.demo.carbonplan.org/).
+### Create Multiscale Zarr stores
 
-Tries to follow the GeoZarr spec, which is composed of these [zarr-conventions](https://github.com/zarr-conventions):
+Python library companion to the TypeScript web mapping tool [zarr-layer](https://zarr-layer.demo.carbonplan.org/). Use it to create GeoZarr-compliant multiscales / pyramids / overviews for Zarr stores for use with web mapping.
+
+Follows the [zarr-conventions](https://github.com/zarr-conventions):
 
 - [multiscales](https://github.com/zarr-conventions/multiscales) — pyramid structure and resolution levels
 - [proj:](https://github.com/zarr-conventions/geo-proj) — coordinate reference system (CRS)
@@ -13,7 +15,6 @@ Tries to follow the GeoZarr spec, which is composed of these [zarr-conventions](
 
 **Warning: experimental**
 
-## Usage
 
 ### Installation
 
@@ -35,7 +36,7 @@ pip install 'topozarr[tutorial]'
 
 ```python
 import xarray as xr
-import xproj # for crs assignment
+import xproj  # for CRS assignment
 from topozarr import create_pyramid
 
 # Load the air_temperature Xarray tutorial dataset
@@ -64,9 +65,9 @@ pyramid.write("pyramid.zarr")
 
 `create_pyramid` returns a write plan; `pyramid.write(store)` does the work.
 
-Not every dataset needs overviews. For a single-resolution (flat) geozarr group,
-`attach_geozarr_metadata` adds the convention attrs and `recommend_encoding`
-gives you the same chunk/shard heuristic to hand to `to_zarr`:
+Not every dataset needs overviews! For lower resolution Zarr stores use
+`attach_geozarr_metadata` to add GeoZarr attrs and `recommend_encoding`
+for chunking/sharding heuristics for web mapping.
 
 ```python
 from topozarr import attach_geozarr_metadata, recommend_encoding
@@ -81,15 +82,8 @@ ds.to_zarr(
 ```
 
 ### Coming from ndpyramid
+The library [ndpyramid](https://github.com/carbonplan/ndpyramid) also builds multiscale Zarr stores. However, it was built as a companion for [carbonplan-maps](https://github.com/carbonplan/maps), which requires the source data to be reprojected to EPSG:3857, square (e.g. 128x128), slippy-map-tile-compliant shapes. The newer mapping library, [zarr-layer](https://zarr-layer.demo.carbonplan.org/), relaxes these requirements significantly, which simplifies multiscales creation and allows topozarr to be much simpler and more flexible. This project is essentially a coarsen call and some metadata in a trenchcoat.
 
-topozarr is the modern replacement for [ndpyramid](https://github.com/carbonplan/ndpyramid).
-The one behavior change worth knowing up front: **topozarr does not reproject or
-regrid.** It coarsens on the grid it is given.
-
-ndpyramid predates the multiscales/geozarr conventions and hard-coded square
-slippy-map tiles (reproject to EPSG:3857) for carbonplan-maps. zarr-layer
-superseded carbonplan-maps and reads arbitrary zarr shapes and CRSs, so the
-reprojection machinery is no longer needed to display the data.
 
 | ndpyramid | topozarr |
 | --- | --- |
@@ -97,17 +91,9 @@ reprojection machinery is no longer needed to display the data.
 | `pyramid_reproject` | no equivalent — reproject upstream, then `create_pyramid` |
 | `pyramid_regrid` | no equivalent — regrid upstream, then `create_pyramid` |
 
-If you need a different grid, do it before the pyramid with
-[rioxarray](https://corteva.github.io/rioxarray/) / [odc-geo](https://odc-geo.readthedocs.io/)
-(reprojection) or [xesmf](https://xesmf.readthedocs.io/) (regridding), and hand
+If you need a different grid, do it before and hand
 the result to `create_pyramid`.
 
-### Documentation
-
-Full docs at **[carbonplan.github.io/topozarr](https://carbonplan.github.io/topozarr/)**:
-
-- [Usage](https://carbonplan.github.io/topozarr/usage/) — sparse pyramids (`factors`), visualization hints (`layer_hints`), chunking and sharding (and why sharding rules), and object-storage / Icechunk backends.
-- [Design](https://carbonplan.github.io/topozarr/design/) — the plan/execute split, chunk and shard heuristics, streaming memory model, and Rust kernel semantics.
 
 ## Contributing
 
@@ -130,7 +116,7 @@ uv run pytest -n auto -m conformance
 Lint and format:
 
 ```bash
-uv run pre-commit run --all-files
+uv run prek run --all-files
 ```
 
 To regenerate the demo datasets in S3 (requires AWS credentials), install the `tutorial` extra and run the build script:
