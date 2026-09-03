@@ -7,7 +7,7 @@ repo_name: carbonplan/topozarr
 theme:
   name: material
   font: false
-  logo: topozarr_logo_name.png
+  logo: topozarr_logo.png
   favicon: topozarr_logo.png
   palette:
     - scheme: slate
