@@ -33,7 +33,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --extra demo
+        run: uv sync --extra tutorial
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
