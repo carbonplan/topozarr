@@ -43,7 +43,6 @@ test = [
     "dask>=2026.7.1",
     "hypothesis>=6.150.0",
     "icechunk>=1.1.19",
-    "ipdb>=0.13.13",
     "moto[s3,server]>=5.0",
     "obstore>=0.9.1",
     "prek>=0.5.2",
@@ -58,7 +57,6 @@ conformance = [
     {include-group = "test"},
 ]
 docs = [
-    "black>=26.5.1",
     "mkdocs-material>=9",
     "mkdocstrings[python]>=0.25",
 ]

@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.1.8
 
 ### Fixed
 
@@ -69,6 +69,8 @@
 
   `pyramid.encoding` therefore moves for chunked sources at every level.
   Unchunked sources are byte-identical, encoding and data alike.
+
+## 0.1.6
 
 ### Added
 
