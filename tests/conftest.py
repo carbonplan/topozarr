@@ -64,8 +64,10 @@ def create_dataset():
         epsg="EPSG:4326",
         add_crs=True,
         extra_dims=None,
+        y_descending=False,
     ):
         dims = {**(extra_dims or {}), y_dim: ny, x_dim: nx}
+        y = np.linspace(0, ny - 1, ny)
         ds = xr.Dataset(
             {
                 "elevation": (
@@ -75,7 +77,7 @@ def create_dataset():
             },
             coords={
                 x_dim: np.linspace(0, nx - 1, nx),
-                y_dim: np.linspace(0, ny - 1, ny),
+                y_dim: y[::-1] if y_descending else y,
             },
         )
         if add_crs:

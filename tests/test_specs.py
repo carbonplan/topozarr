@@ -23,9 +23,12 @@ def test_translation_offsets(create_dataset):
     assert layout[1]["transform"]["translation"] == [0.5, 0.5]
 
 
-def test_spatial_root_attrs(create_dataset):
+@pytest.mark.parametrize("y_descending", [False, True])
+def test_spatial_root_attrs(create_dataset, y_descending):
     nx, ny = 16, 16
-    pyramid = create_pyramid(create_dataset(nx=nx, ny=ny), levels=2)
+    pyramid = create_pyramid(
+        create_dataset(nx=nx, ny=ny, y_descending=y_descending), levels=2
+    )
     attrs = pyramid.attrs
 
     assert attrs["spatial:dimensions"] == ["y", "x"]
@@ -36,9 +39,21 @@ def test_spatial_root_attrs(create_dataset):
 
     x_res, _, c, _, y_res, f = attrs["spatial:transform"]
     assert x_res == pytest.approx(1.0)
-    assert y_res == pytest.approx(1.0)
     assert c == pytest.approx(-0.5)
-    assert f == pytest.approx(-0.5)
+    if y_descending:
+        assert y_res == pytest.approx(-1.0)
+        assert f == pytest.approx(ny - 0.5)
+    else:
+        assert y_res == pytest.approx(1.0)
+        assert f == pytest.approx(-0.5)
+
+
+def test_spatial_bbox_matches_across_y_orientation(create_dataset):
+    up = create_pyramid(create_dataset(), levels=2).attrs["spatial:bbox"]
+    down = create_pyramid(create_dataset(y_descending=True), levels=2).attrs[
+        "spatial:bbox"
+    ]
+    assert up == pytest.approx(down)
 
 
 def test_proj_attrs(create_dataset):
@@ -50,9 +65,12 @@ def test_proj_attrs(create_dataset):
     assert "GEOGCRS" in attrs["proj:wkt2"] or "GEODCRS" in attrs["proj:wkt2"]
 
 
-def test_spatial_per_level_attrs(create_dataset):
+@pytest.mark.parametrize("y_descending", [False, True])
+def test_spatial_per_level_attrs(create_dataset, y_descending):
     levels = 3
-    pyramid = create_pyramid(create_dataset(nx=32, ny=32), levels=levels)
+    pyramid = create_pyramid(
+        create_dataset(nx=32, ny=32, y_descending=y_descending), levels=levels
+    )
     layout = pyramid.attrs["multiscales"]["layout"]
 
     for entry in layout:

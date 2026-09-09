@@ -24,6 +24,15 @@ def test_pyramid_structure(create_dataset):
     assert pyramid.level_templates[2].elevation.shape == (4, 4)
 
 
+def test_descending_y_coords_survive_write(create_dataset, tmp_path):
+    ds = create_dataset(nx=32, ny=32, y_descending=True)
+    create_pyramid(ds, levels=3).write(tmp_path / "p.zarr")
+    dt = xr.open_datatree(tmp_path / "p.zarr", engine="zarr", consolidated=False)
+    for lvl in ("0", "1", "2"):
+        y = dt[lvl].ds.y.values
+        assert (np.diff(y) < 0).all()
+
+
 def test_pyramid_write_roundtrip(create_dataset):
     ds = create_dataset(nx=16, ny=16)
     pyramid = create_pyramid(ds, levels=3)

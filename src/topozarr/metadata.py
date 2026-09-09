@@ -57,6 +57,25 @@ def get_crs(ds: xr.Dataset) -> str:
     return str(crs)
 
 
+def validate_spatial_dims(
+    ds: xr.Dataset,
+    x_dim: str,
+    y_dim: str,
+    *,
+    action: str,
+) -> None:
+    """Raise ValueError if x_dim/y_dim are absent or no variable spans both."""
+    if x_dim not in ds.dims:
+        raise ValueError(f"x_dim {x_dim!r} not found in dataset dims {tuple(ds.dims)}")
+    if y_dim not in ds.dims:
+        raise ValueError(f"y_dim {y_dim!r} not found in dataset dims {tuple(ds.dims)}")
+    if not any(x_dim in da.dims and y_dim in da.dims for da in ds.data_vars.values()):
+        raise ValueError(
+            f"no variable has both x_dim {x_dim!r} and y_dim {y_dim!r}; "
+            f"nothing to {action}"
+        )
+
+
 @dataclass
 class ZarrLayerVarConfig:
     """Per-variable visualization hints for zarr-layer.
@@ -289,15 +308,7 @@ def recommend_encoding(
     """
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
-    if x_dim not in ds.dims:
-        raise ValueError(f"x_dim {x_dim!r} not found in dataset dims {tuple(ds.dims)}")
-    if y_dim not in ds.dims:
-        raise ValueError(f"y_dim {y_dim!r} not found in dataset dims {tuple(ds.dims)}")
-    if not any(x_dim in da.dims and y_dim in da.dims for da in ds.data_vars.values()):
-        raise ValueError(
-            f"no variable has both x_dim {x_dim!r} and y_dim {y_dim!r}; "
-            "nothing to encode"
-        )
+    validate_spatial_dims(ds, x_dim, y_dim, action="encode")
 
     return create_level_encoding(
         ds,
@@ -408,6 +419,7 @@ def create_geozarr_metadata(
 
     No ``multiscales`` convention or layout; suitable for a flat zarr group.
     """
+    validate_spatial_dims(ds, x_dim, y_dim, action="georeference")
     return _geozarr_attrs(
         ds,
         x_dim,

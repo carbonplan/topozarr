@@ -16,6 +16,7 @@ from .metadata import (
     create_multiscale_metadata,
     get_crs,
     recommend_encoding,
+    validate_spatial_dims,
 )
 from .pyramid import CoarseningMethod, Pyramid, validate_method
 
@@ -226,15 +227,7 @@ def create_pyramid(
     validate_method(str(method))
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
-    if x_dim not in ds.dims:
-        raise ValueError(f"x_dim {x_dim!r} not found in dataset dims {tuple(ds.dims)}")
-    if y_dim not in ds.dims:
-        raise ValueError(f"y_dim {y_dim!r} not found in dataset dims {tuple(ds.dims)}")
-    if not any(x_dim in da.dims and y_dim in da.dims for da in ds.data_vars.values()):
-        raise ValueError(
-            f"no variable has both x_dim {x_dim!r} and y_dim {y_dim!r}; "
-            "nothing to pyramid"
-        )
+    validate_spatial_dims(ds, x_dim, y_dim, action="pyramid")
     curvilinear = [
         str(name)
         for name, coord in ds.coords.items()
