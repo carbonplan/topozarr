@@ -77,6 +77,10 @@ dt.to_zarr("pyramid.zarr", zarr_format=3, consolidated=False,
            encoding=pyramid.encoding)
 ```
 
+Deep levels of a Dask-backed source can outrun the chunk band that
+`recommend_encoding` flexes to; if `to_zarr` raises on `safe_chunks`, pass
+`safe_chunks=False`.
+
 ## Progress and memory
 
 Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written regions (requires `tqdm` to be installed):

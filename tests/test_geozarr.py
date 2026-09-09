@@ -28,8 +28,9 @@ SPEC_KEYS = {
 }
 
 
-def test_attach_geozarr_metadata(create_dataset):
-    ds = create_dataset(nx=8, ny=4)
+@pytest.mark.parametrize("y_descending", [False, True])
+def test_attach_geozarr_metadata(create_dataset, y_descending):
+    ds = create_dataset(nx=8, ny=4, y_descending=y_descending)
     out = attach_geozarr_metadata(ds)
 
     assert SPEC_KEYS <= set(out.attrs)
@@ -38,10 +39,21 @@ def test_attach_geozarr_metadata(create_dataset):
     assert out.attrs["proj:code"] == "EPSG:4326"
     assert out.attrs["spatial:dimensions"] == ["y", "x"]
     assert out.attrs["spatial:shape"] == [4, 8]
-    assert out.attrs["spatial:transform"] == [1.0, 0.0, -0.5, 0.0, 1.0, -0.5]
+    if y_descending:
+        assert out.attrs["spatial:transform"] == [1.0, 0.0, -0.5, 0.0, -1.0, 3.5]
+    else:
+        assert out.attrs["spatial:transform"] == [1.0, 0.0, -0.5, 0.0, 1.0, -0.5]
     assert out.attrs["spatial:bbox"] == [-0.5, -0.5, 7.5, 3.5]
     # input untouched
     assert "proj:code" not in ds.attrs
+
+
+def test_attach_geozarr_metadata_missing_dims(create_dataset):
+    ds = create_dataset()
+    with pytest.raises(ValueError, match="x_dim 'lon' not found"):
+        attach_geozarr_metadata(ds, x_dim="lon")
+    with pytest.raises(ValueError, match="y_dim 'lat' not found"):
+        attach_geozarr_metadata(ds, y_dim="lat")
 
 
 def test_attach_geozarr_metadata_explicit_crs(create_dataset):

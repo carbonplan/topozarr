@@ -700,6 +700,10 @@ class Pyramid:
                    encoding=pyramid.encoding)
         ```
 
+        Deep levels of a Dask-backed source can outrun the chunk band that
+        ``recommend_encoding`` flexes to (see its ``Note``); if ``to_zarr``
+        raises on ``safe_chunks``, pass ``safe_chunks=False``.
+
         Values match [write][topozarr.pyramid.Pyramid.write] exactly, source
         dtype and ``_FillValue`` included, at the cost of an ``f8`` intermediate
         through each coarsen. The exception is an ``f8`` source, where the two

@@ -27,7 +27,7 @@ def heterogeneous_datasets(draw):
         {"elevation": (all_dims, np.zeros(shape, dtype="f4"))},
         coords={
             x_n: np.arange(nx),
-            y_n: np.arange(ny),
+            y_n: np.arange(ny)[::-1] if draw(st.booleans()) else np.arange(ny),
             **{k: np.arange(v) for k, v in extras.items()},
         },
     )
@@ -88,6 +88,8 @@ def spatial_grid_datasets(draw):
     ny = draw(st.integers(2, 32))
     x_res = draw(st.floats(0.1, 10.0, allow_nan=False, allow_infinity=False))
     y_res = draw(st.floats(0.1, 10.0, allow_nan=False, allow_infinity=False))
+    if draw(st.booleans()):
+        y_res = -y_res  # north-up raster: y descends
     x0 = draw(st.floats(-100.0, 100.0, allow_nan=False, allow_infinity=False))
     y0 = draw(st.floats(-100.0, 100.0, allow_nan=False, allow_infinity=False))
 
@@ -118,7 +120,7 @@ def test_spatial_transform_invariants(ds_info, levels):
     # bbox extent matches grid footprint
     xmin, ymin, xmax, ymax = attrs["spatial:bbox"]
     assert xmax - xmin == pytest.approx(x_res * nx, rel=1e-5)
-    assert ymax - ymin == pytest.approx(y_res * ny, rel=1e-5)
+    assert ymax - ymin == pytest.approx(abs(y_res) * ny, rel=1e-5)
 
     # transform origin is half a pixel before the first coordinate
     a, _, c, _, e, f = attrs["spatial:transform"]
@@ -134,6 +136,8 @@ def test_spatial_transform_invariants(ds_info, levels):
         # level-0 resolution * 2^level)
         level_x_res = entry["spatial:transform"][0]
         assert level_x_res == pytest.approx(x_res * (2**i), rel=1e-5)
+        level_y_res = entry["spatial:transform"][4]
+        assert level_y_res == pytest.approx(y_res * (2**i), rel=1e-5)
 
 
 @settings(deadline=2000)
@@ -161,12 +165,13 @@ def flat_datasets(draw):
     extras = draw(st.dictionaries(extra_names, st.integers(1, 3), max_size=2))
     dtype = draw(st.sampled_from(["u1", "i2", "f4", "f8"]))
 
+    y = np.arange(ny)[::-1] if draw(st.booleans()) else np.arange(ny)
     dims = {**extras, y_n: ny, x_n: nx}
     ds = xr.Dataset(
         {"elevation": (tuple(dims), np.zeros(tuple(dims.values()), dtype=dtype))},
         coords={
             x_n: np.arange(nx),
-            y_n: np.arange(ny),
+            y_n: y,
             **{k: np.arange(v) for k, v in extras.items()},
         },
     )
