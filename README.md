@@ -10,7 +10,7 @@ Python library companion to the TypeScript web mapping tool [zarr-layer](https:/
 Follows the [zarr-conventions](https://github.com/zarr-conventions):
 
 - [multiscales](https://github.com/zarr-conventions/multiscales) — pyramid structure and resolution levels
-- [proj:](https://github.com/zarr-conventions/geo-proj) — coordinate reference system (CRS)
+- [proj:](https://github.com/zarr-conventions/proj) — coordinate reference system (CRS)
 - [spatial:](https://github.com/zarr-conventions/spatial) — affine transform, bounding box, and dimension names
 
 **Warning: experimental**

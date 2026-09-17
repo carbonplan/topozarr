@@ -10,11 +10,6 @@ from topozarr import (
     create_pyramid,
     recommend_encoding,
 )
-from topozarr.metadata import (
-    MULTISCALES_CONVENTION,
-    PROJ_CONVENTION,
-    SPATIAL_CONVENTION,
-)
 
 SPEC_KEYS = {
     "zarr_conventions",
@@ -307,11 +302,13 @@ def test_flat_and_pyramid_root_attrs_agree(create_dataset):
     for key in set(flat) - {"zarr_conventions"}:
         assert flat[key] == root[key], key
 
-    assert flat["zarr_conventions"] == [PROJ_CONVENTION, SPATIAL_CONVENTION]
-    assert root["zarr_conventions"] == [
-        MULTISCALES_CONVENTION,
-        PROJ_CONVENTION,
-        SPATIAL_CONVENTION,
+    # names only: the entry bodies are pinned against the vendored upstream
+    # schemas in test_specs.py, which comparing to the constants cannot do.
+    assert [c["name"] for c in flat["zarr_conventions"]] == ["proj", "spatial"]
+    assert [c["name"] for c in root["zarr_conventions"]] == [
+        "multiscales",
+        "proj",
+        "spatial",
     ]
 
     # root and level 0 share one transform computation
