@@ -2216,7 +2216,7 @@ wheels = [
 
 [[package]]
 name = "topozarr"
-version = "0.1.8"
+version = "0.1.9"
 source = { editable = "." }
 dependencies = [
     { name = "numpy" },
@@ -2250,6 +2250,7 @@ conformance = [
     { name = "geozarr-toolkit" },
     { name = "hypothesis" },
     { name = "icechunk" },
+    { name = "jsonschema" },
     { name = "moto", extra = ["s3", "server"] },
     { name = "obstore" },
     { name = "prek" },
@@ -2268,6 +2269,7 @@ test = [
     { name = "dask" },
     { name = "hypothesis" },
     { name = "icechunk" },
+    { name = "jsonschema" },
     { name = "moto", extra = ["s3", "server"] },
     { name = "obstore" },
     { name = "prek" },
@@ -2308,6 +2310,7 @@ conformance = [
     { name = "geozarr-toolkit", specifier = ">=0.1.1,<0.2" },
     { name = "hypothesis", specifier = ">=6.150.0" },
     { name = "icechunk", specifier = ">=1.1.19" },
+    { name = "jsonschema", specifier = ">=4.0" },
     { name = "moto", extras = ["s3", "server"], specifier = ">=5.0" },
     { name = "obstore", specifier = ">=0.9.1" },
     { name = "prek", specifier = ">=0.5.2" },
@@ -2326,6 +2329,7 @@ test = [
     { name = "dask", specifier = ">=2026.7.1" },
     { name = "hypothesis", specifier = ">=6.150.0" },
     { name = "icechunk", specifier = ">=1.1.19" },
+    { name = "jsonschema", specifier = ">=4.0" },
     { name = "moto", extras = ["s3", "server"], specifier = ">=5.0" },
     { name = "obstore", specifier = ">=0.9.1" },
     { name = "prek", specifier = ">=0.5.2" },
@@ -2338,7 +2342,7 @@ test = [
 
 [[package]]
 name = "topozarr-core"
-version = "0.1.8"
+version = "0.1.9"
 source = { editable = "core" }
 dependencies = [
     { name = "numpy" },

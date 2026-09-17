@@ -1,8 +1,13 @@
+import json
+from pathlib import Path
+
+import jsonschema
 import pytest
 import xarray as xr
 import zarr
 
 from topozarr.coarsen import create_pyramid
+from topozarr.metadata import ALL_CONVENTIONS
 
 
 @pytest.mark.parametrize("method", ["mean", "max", "min", "sum", "nearest"])
@@ -174,3 +179,81 @@ def test_geozarr_toolkit_group_validation(create_dataset, case):
     errors = validate_group(dt)
     for convention, errs in errors.items():
         assert errs == [], f"{convention} validation errors: {errs}"
+
+
+# --- tier 1: validate emitted metadata against the vendored convention schemas.
+# The schemas are pinned copies of the upstream tags declared in
+# topozarr.metadata. Nothing here touches the network; a scheduled job checks
+# these copies against upstream (see docs/design.md).
+
+SCHEMA_DIR = Path(__file__).parent / "schemas"
+
+
+def _schema(convention) -> dict:
+    return json.loads(
+        (SCHEMA_DIR / f"{convention.repo}-{convention.tag}.json").read_text()
+    )
+
+
+def _nodes(pyramid, tmp_path) -> dict[str, dict]:
+    """Written zarr.json for the root group and each level group."""
+    store = tmp_path / "pyramid.zarr"
+    pyramid.write(str(store))
+    levels = len(pyramid.attrs["multiscales"]["layout"])
+    paths = [""] + [str(i) for i in range(levels)]
+    return {p or "/": json.loads((store / p / "zarr.json").read_text()) for p in paths}
+
+
+def test_vendored_schemas_match_declared_tags():
+    """Every declared convention has a vendored schema, and vice versa."""
+    declared = {f"{c.repo}-{c.tag}.json" for c in ALL_CONVENTIONS}
+    vendored = {p.name for p in SCHEMA_DIR.glob("*.json")}
+    assert declared == vendored
+
+
+@pytest.mark.parametrize(
+    "convention", ALL_CONVENTIONS, ids=[c.name for c in ALL_CONVENTIONS]
+)
+def test_vendored_schema_id_matches_derived_url(convention):
+    """The vendored schema's $id is the URL we emit, so the pin is self-checking."""
+    assert _schema(convention)["$id"] == convention.schema_url
+
+
+@pytest.mark.parametrize(
+    "case", CONFORMANCE_CASES.values(), ids=CONFORMANCE_CASES.keys()
+)
+def test_root_validates_against_vendored_schemas(create_dataset, case, tmp_path):
+    """The pyramid root declares all three conventions and satisfies each schema."""
+    pyramid = _build_case_pyramid(create_dataset, case)
+    root = _nodes(pyramid, tmp_path)["/"]
+
+    for convention in ALL_CONVENTIONS:
+        errors = sorted(
+            jsonschema.Draft7Validator(_schema(convention)).iter_errors(root),
+            key=lambda e: list(e.absolute_path),
+        )
+        assert not errors, f"{convention.name}: " + "; ".join(
+            f"{list(e.absolute_path)}: {e.message}" for e in errors[:5]
+        )
+
+
+@pytest.mark.parametrize(
+    "case", CONFORMANCE_CASES.values(), ids=CONFORMANCE_CASES.keys()
+)
+def test_conventions_entries_match_schema_consts(create_dataset, case, tmp_path):
+    """Each zarr_conventions entry matches its own convention's metadata block.
+
+    The upstream schemas pin schema_url/spec_url/uuid/name/description as
+    ``const``, so this is what catches a stale tag or a renamed repo.
+    """
+    pyramid = _build_case_pyramid(create_dataset, case)
+    entries = _nodes(pyramid, tmp_path)["/"]["attributes"]["zarr_conventions"]
+    by_uuid = {e["uuid"]: e for e in entries}
+
+    for convention in ALL_CONVENTIONS:
+        entry = by_uuid[convention.uuid]
+        block = _schema(convention)["$defs"]["conventionMetadata"]
+        errors = list(jsonschema.Draft7Validator(block).iter_errors(entry))
+        assert not errors, f"{convention.name}: " + "; ".join(
+            e.message for e in errors[:5]
+        )
