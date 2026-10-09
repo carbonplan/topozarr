@@ -1,5 +1,15 @@
 # Release notes
 
+## Unreleased
+
+### Performance
+
+- `block_reduce` reads C-contiguous input as row slices and splits work by
+  output row: about 10x faster per block, with byte-identical output.
+- New `zarrs` extra: when installed, `Pyramid.write` uses the zarrs (Rust)
+  codec pipeline for local stores, about 2x faster end to end. Remote stores
+  keep zarr-python's pipeline (zarrs-python#139).
+
 ## 0.1.8
 
 ### Fixed

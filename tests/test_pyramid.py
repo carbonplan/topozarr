@@ -863,3 +863,31 @@ def test_partly_spatial_var_over_kernel_ndim_limit_raises(create_dataset):
 
     with pytest.raises(ValueError, match="topozarr-core supports at most 4"):
         create_pyramid(ds, levels=2)
+
+
+@pytest.mark.parametrize(
+    "store, expect",
+    [("local.zarr", "zarrs"), ("s3://bucket/p.zarr", "default"), (None, "default")],
+)
+def test_codec_pipeline_local_only(tmp_path, store, expect):
+    from topozarr.pyramid import DEFAULT_PIPELINE, ZARRS_PIPELINE, _codec_pipeline
+
+    store = zarr.storage.MemoryStore() if store is None else store
+    with _codec_pipeline(store):
+        got = zarr.config.get("codec_pipeline.path")
+    assert got == (ZARRS_PIPELINE if expect == "zarrs" else DEFAULT_PIPELINE)
+    assert zarr.config.get("codec_pipeline.path") == DEFAULT_PIPELINE
+
+
+def test_zarrs_pipeline_matches_default(create_dataset, tmp_path, monkeypatch):
+    from contextlib import nullcontext
+
+    import topozarr.pyramid
+
+    ds = create_dataset(nx=64, ny=64)
+    create_pyramid(ds, levels=3).write(tmp_path / "zarrs.zarr")
+    monkeypatch.setattr(topozarr.pyramid, "_codec_pipeline", lambda _: nullcontext())
+    create_pyramid(ds, levels=3).write(tmp_path / "default.zarr")
+    a = xr.open_datatree(tmp_path / "zarrs.zarr", engine="zarr", consolidated=False)
+    b = xr.open_datatree(tmp_path / "default.zarr", engine="zarr", consolidated=False)
+    xr.testing.assert_identical(a, b)

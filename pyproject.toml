@@ -23,6 +23,8 @@ build-backend = "uv_build"
 
 
 [project.optional-dependencies]
+# Rust codec pipeline, used automatically for local stores when installed
+zarrs = ["zarrs>=0.2.3"]
 tutorial = [
     "boto3",
     "click",
@@ -39,6 +41,7 @@ tutorial = [
 
 [dependency-groups]
 test = [
+    "zarrs>=0.2.3",
     "boto3>=1.0",
     "dask>=2026.7.1",
     "hypothesis>=6.150.0",

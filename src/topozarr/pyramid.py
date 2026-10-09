@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
 import math
+import os
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any, Literal, cast
@@ -12,6 +15,7 @@ import psutil
 import xarray as xr
 import zarr
 import zarr.errors
+import zarr.storage
 from topozarr_core import METHODS, block_reduce
 
 from .chunking import source_chunks
@@ -74,6 +78,31 @@ def _make_fused_reduce_hook(
         target[region_out] = out[out_trim]
 
     return hook
+
+
+ZARRS_PIPELINE = "zarrs.ZarrsCodecPipeline"
+DEFAULT_PIPELINE = "zarr.core.codec_pipeline.BatchedCodecPipeline"
+
+
+def _codec_pipeline(store: Any) -> AbstractContextManager[Any]:
+    """Use the zarrs (Rust) codec pipeline for local stores when installed.
+
+    Remote stores keep zarr-python's pipeline: zarrs-python rebuilds its own
+    object_store client without pooling (zarrs-python #139). A pipeline the
+    user already configured is left alone.
+    """
+    local = isinstance(store, zarr.storage.LocalStore) or (
+        isinstance(store, (str, os.PathLike)) and "://" not in str(store)
+    )
+    if (
+        local
+        and zarr.config.get("codec_pipeline.path") == DEFAULT_PIPELINE
+        and importlib.util.find_spec("zarrs") is not None
+    ):
+        import zarrs  # noqa: F401  # registers the pipeline
+
+        return zarr.config.set({"codec_pipeline.path": ZARRS_PIPELINE})
+    return nullcontext()
 
 
 def _progress_bar(total: int) -> Any:
@@ -369,6 +398,8 @@ class Pyramid:
         root.attrs.update(self.attrs)
 
         all_stats: dict[str, Any] = {}
+        pipeline = _codec_pipeline(store)
+        pipeline.__enter__()
         try:
             for lvl in write_levels:
                 t_level = perf_counter()
@@ -445,6 +476,7 @@ class Pyramid:
                         **timer.as_dict(),
                     }
         finally:
+            pipeline.__exit__(None, None, None)
             if pbar is not None:
                 pbar.close()
         return all_stats if stats else None

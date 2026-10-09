@@ -6,6 +6,7 @@ use numpy::{
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyTuple;
+use rayon::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Method {
@@ -105,8 +106,9 @@ fn all_missing_result<T: Element>(fill: Option<T>) -> T {
     fill.or_else(T::nan).unwrap_or(T::ZERO)
 }
 
+/// Reduce one window, given its elements in row-major order.
 fn reduce_window<T: Element>(
-    w: &ArrayViewD<T>,
+    mut w: impl Iterator<Item = T>,
     method: Method,
     fill: Option<T>,
     skipna: bool,
@@ -114,11 +116,11 @@ fn reduce_window<T: Element>(
     match method {
         // corner-pick decimation: fill/skipna do not apply, which keeps the
         // op exactly composable (corner-of-corners == corner-of-native)
-        Method::Nearest => *w.iter().next().expect("windows are never empty"),
+        Method::Nearest => w.next().expect("windows are never empty"),
         Method::Mean | Method::Sum => {
             let mut acc = 0.0f64;
             let mut count = 0usize;
-            for &v in w.iter() {
+            for v in w {
                 if skipna && is_missing(v, fill) {
                     continue;
                 }
@@ -140,7 +142,7 @@ fn reduce_window<T: Element>(
         }
         Method::Max | Method::Min => {
             let mut best: Option<T> = None;
-            for &v in w.iter() {
+            for v in w {
                 if skipna {
                     if is_missing(v, fill) {
                         continue;
@@ -188,11 +190,56 @@ fn reduce<T: Element>(
         .map(|(&n, &s)| s.min(n).max(1))
         .collect();
 
-    let mut out = ArrayD::<T>::from_elem(IxDyn(&out_shape), T::ZERO);
+    let nd = a.ndim();
+    if nd >= 2 && stride[..nd - 2].iter().all(|&s| s == 1) {
+        if let Some(src) = a.as_slice() {
+            return reduce_rows(src, a.shape(), &window, &out_shape, method, fill, skipna);
+        }
+    }
+    reduce_generic(a, &window, &out_shape, method, fill, skipna)
+}
+
+fn reduce_generic<T: Element>(
+    a: ArrayViewD<T>,
+    window: &[usize],
+    out_shape: &[usize],
+    method: Method,
+    fill: Option<T>,
+    skipna: bool,
+) -> ArrayD<T> {
+    let mut out = ArrayD::<T>::from_elem(IxDyn(out_shape), T::ZERO);
     Zip::from(&mut out)
-        .and(a.exact_chunks(IxDyn(&window)))
-        .par_for_each(|o, w| *o = reduce_window(&w.into_dyn(), method, fill, skipna));
+        .and(a.exact_chunks(IxDyn(window)))
+        .par_for_each(|o, w| *o = reduce_window(w.iter().copied(), method, fill, skipna));
     out
+}
+
+/// Fast path for C-contiguous input reduced over the last two axes only:
+/// windows are read as row slices, and rayon splits by output row.
+fn reduce_rows<T: Element>(
+    src: &[T],
+    shape: &[usize],
+    window: &[usize],
+    out_shape: &[usize],
+    method: Method,
+    fill: Option<T>,
+    skipna: bool,
+) -> ArrayD<T> {
+    let nd = shape.len();
+    let (h, w) = (shape[nd - 2], shape[nd - 1]);
+    let (sy, sx) = (window[nd - 2], window[nd - 1]);
+    let (oh, ow) = (out_shape[nd - 2], out_shape[nd - 1]);
+    let mut out = vec![T::ZERO; out_shape.iter().product()];
+    out.par_chunks_mut(ow).enumerate().for_each(|(r, row)| {
+        let top = (r / oh) * h + (r % oh) * sy;
+        for (ox, o) in row.iter_mut().enumerate() {
+            let x0 = ox * sx;
+            let win =
+                (top..top + sy).flat_map(|y| src[y * w + x0..y * w + x0 + sx].iter().copied());
+            *o = reduce_window(win, method, fill, skipna);
+        }
+    });
+    ArrayD::from_shape_vec(IxDyn(out_shape), out).expect("out_shape matches buffer")
 }
 
 #[pyfunction]
@@ -284,6 +331,35 @@ mod tests {
         let listed = Method::names_display();
         for name in Method::names() {
             assert!(listed.contains(name), "error text omits {name}: {listed}");
+        }
+    }
+
+    #[test]
+    fn row_fast_path_matches_generic() {
+        // odd extents exercise trailing-partial trims; values include NaN and
+        // the fill so every skip branch runs
+        let shape = [3usize, 7, 9];
+        let a = ArrayD::from_shape_fn(IxDyn(&shape), |i| match (i[0] * 31 + i[1] * 7 + i[2]) % 6 {
+            0 => f64::NAN,
+            1 => 0.0,
+            k => k as f64 + i[2] as f64 * 0.37,
+        });
+        for &(_, method) in Method::ALL {
+            for stride in [[1usize, 2, 2], [1, 3, 2], [1, 8, 4]] {
+                for (fill, skipna) in [(None, true), (Some(0.0), true), (None, false)] {
+                    let out = reduce(a.view(), &stride, method, fill, skipna);
+                    let window: Vec<usize> =
+                        shape.iter().zip(&stride).map(|(&n, &s)| s.min(n)).collect();
+                    let expect =
+                        reduce_generic(a.view(), &window, out.shape(), method, fill, skipna);
+                    assert!(
+                        out.iter()
+                            .zip(expect.iter())
+                            .all(|(x, y)| x == y || (x.is_nan() && y.is_nan())),
+                        "{method:?} {stride:?} {fill:?} {skipna}"
+                    );
+                }
+            }
         }
     }
 

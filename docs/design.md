@@ -73,5 +73,6 @@ each dimension's extent.
 | `chunks_per_shard` | `create_pyramid` | shard size = work unit; `None` disables sharding |
 | `max_region_bytes` | `Pyramid.write` | cap on level-0 region widening |
 | `max_workers` | `Pyramid.write` | thread pool size; `None` = RAM/CPU-derived |
+| codec pipeline | `zarr.config` | zarrs (Rust) used automatically for local stores when the `zarrs` extra is installed |
 | `keep_levels_in_memory` | `Pyramid.write` | keep written levels in RAM to skip re-reads; `None` = auto when they fit |
 | `progress` | `Pyramid.write` | tqdm bar over written regions |
