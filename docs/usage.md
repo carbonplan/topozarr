@@ -24,7 +24,7 @@ pyramid = create_pyramid(
 pyramid.write("pyramid.zarr")
 ```
 
-`levels` is the total number of resolution levels including the original. Level `0` is the original (highest) resolution; each subsequent level is coarsened by 2× per spatial dimension.
+`levels` is the total number of resolution levels including the original. Level `0` is the original (highest) resolution; each subsequent level is coarsened by 2× per spatial dimension. `levels="auto"` keeps adding levels until the smaller spatial dim would drop below `min_dim` (default 256).
 
 To build a non-uniform pyramid, pass `factors` instead of `levels` — explicit cumulative downsample factors per level, e.g. `factors=[1, 4, 16]` for native, 4×, and 16×.
 
@@ -38,39 +38,39 @@ Levels are always named sequentially (`0, 1, 2, …`) regardless of whether you 
 
 `pyramid.write` accepts a local path, an `Obstore` store, or an `Icechunk` store.
 
-### Local path
+=== "Local path"
 
-```python
-pyramid.write("pyramid.zarr")
-```
+    ```python
+    pyramid.write("pyramid.zarr")
+    ```
 
-For faster local writes, install the `zarrs` extra (see [Tips](tips.md#faster-local-writes)).
+    For faster local writes, install the `zarrs` extra (see [Tips](tips.md#faster-local-writes)).
 
-### Icechunk
+=== "Icechunk"
 
-```python
-import icechunk
+    ```python
+    import icechunk
 
-storage = icechunk.s3_storage(
-    bucket="<your_bucket>", prefix="<your_prefix>", from_env=True
-)
-repo = icechunk.Repository.create(storage)
-session = repo.writable_session("main")
-pyramid.write(session.store, mode="w")
-session.commit("write pyramid")
-```
+    storage = icechunk.s3_storage(
+        bucket="<your_bucket>", prefix="<your_prefix>", from_env=True
+    )
+    repo = icechunk.Repository.create(storage)
+    session = repo.writable_session("main")
+    pyramid.write(session.store, mode="w")
+    session.commit("write pyramid")
+    ```
 
-### Obstore
+=== "Obstore"
 
-```python
-from obstore.store import from_url
-from zarr.storage import ObjectStore
+    ```python
+    from obstore.store import from_url
+    from zarr.storage import ObjectStore
 
-store = ObjectStore(from_url("s3://carbonplan-scratch/topozarr/air.zarr", region="us-west-2"))
-pyramid.write(store, mode="w")
-```
+    store = ObjectStore(from_url("s3://carbonplan-scratch/topozarr/air.zarr", region="us-west-2"))
+    pyramid.write(store, mode="w")
+    ```
 
-Seeing `"Connect, TimedOut"` errors? See [Tips](tips.md#obstore-timeouts).
+    Seeing `"Connect, TimedOut"` errors? See [Tips](tips.md#obstore-timeouts).
 
 ## Single-resolution datasets (no pyramid)
 

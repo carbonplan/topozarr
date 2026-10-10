@@ -79,7 +79,7 @@ print(pyramid.encoding)
 pyramid.write("pyramid.zarr")
 ```
 
-`levels` is the total number of resolution levels, including the original. Level `0` is the original (highest) resolution; by default each subsequent level is coarsened by a factor of 2 per spatial dimension, so the last level is the coarsest.
+`levels` is the total number of resolution levels, including the original. Level `0` is the original (highest) resolution; by default each subsequent level is coarsened by a factor of 2 per spatial dimension, so the last level is the coarsest. Pass `levels="auto"` to keep adding levels until the smaller spatial dim would drop below `min_dim` (default 256).
 
 `create_pyramid` returns a write plan; `pyramid.write(store)` does the work.
 

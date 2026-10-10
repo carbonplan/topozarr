@@ -10,6 +10,12 @@ before anything is written:
 - **Spatial coordinates must be 1-D** and uniformly spaced. Curvilinear grids
   (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected.
 - **Spatial variables** are limited to 4 dimensions.
+- **Packed integers** (`scale_factor` / `add_offset`, e.g. Sentinel-2 `uint16`)
+  are written packed whether the source was opened decoded or with
+  `mask_and_scale=False`. Decoded input is re-packed to its stored dtype.
+  Packed input without a `_FillValue`, `_Unsigned` variables, and masked-only
+  integers (e.g. WorldCover `uint8`) stay float; open them with
+  `mask_and_scale=False` to keep the integer dtype.
 
 Need a different grid? Reproject or regrid upstream, then hand the result to `create_pyramid`.
 

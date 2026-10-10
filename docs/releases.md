@@ -1,5 +1,27 @@
 # Release notes
 
+## Unreleased
+
+### Changed
+
+- Integer `mean` rounds half to even (numpy's `rint`) instead of truncating,
+  so a window averaging 5.75 gives 6, not 5. Existing integer stores differ by
+  up to one unit; don't append new levels (`mode="a"`) to a store written by
+  an older version.
+- CF-packed input (`scale_factor` / `add_offset` with a `_FillValue`) is
+  written in its packed integer dtype whether opened decoded or with
+  `mask_and_scale=False`. `as_datatree` returns it packed too.
+
+### Added
+
+- `create_pyramid(levels="auto", min_dim=256)` picks the level count from the
+  raster size.
+
+### Fixed
+
+- A packed `_FillValue` is no longer used as the missing marker on decoded
+  floats, which dropped real values that decoded to it.
+
 ## 0.1.11
 
 ### Fixed

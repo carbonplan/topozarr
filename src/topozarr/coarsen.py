@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
 import xarray as xr
 
@@ -105,16 +107,29 @@ def build_level_templates(
     return dict(enumerate(levels))
 
 
-def _resolve_factors(levels: int | None, factors: list[int] | None) -> list[int]:
+def _resolve_factors(
+    levels: int | Literal["auto"] | None,
+    factors: list[int] | None,
+    min_size: int = 0,
+    min_dim: int = 256,
+) -> list[int]:
     """Validate the levels/factors inputs and return cumulative downsample factors.
 
     Exactly one of ``levels`` / ``factors`` must be given. ``levels=N`` maps to
-    powers of two ``[1, 2, 4, ..., 2**(N-1)]``. An explicit ``factors`` list must
-    start at 1, be strictly increasing, and have each entry integer-divide the
-    next (whole per-step ratios).
+    powers of two ``[1, 2, 4, ..., 2**(N-1)]``. ``levels="auto"`` picks the
+    largest N with ``min_size // 2**(N-1) >= min_dim`` (at least 1). An
+    explicit ``factors`` list must start at 1, be strictly increasing, and have
+    each entry integer-divide the next (whole per-step ratios).
     """
     if (levels is None) == (factors is None):
         raise ValueError("pass exactly one of 'levels' or 'factors'")
+
+    if levels == "auto":
+        if not isinstance(min_dim, int) or isinstance(min_dim, bool) or min_dim < 1:
+            raise ValueError(f"min_dim must be a positive int, got {min_dim!r}")
+        levels = 1
+        while min_size // 2**levels >= min_dim:
+            levels += 1
 
     if levels is not None:
         if not isinstance(levels, int) or levels < 1:
@@ -139,11 +154,51 @@ def _resolve_factors(levels: int | None, factors: list[int] | None) -> list[int]
     return list(factors)
 
 
+def _repack(da: xr.DataArray) -> xr.DataArray:
+    """Re-pack a CF-decoded variable to its stored integer dtype.
+
+    ``xr.open_*`` decodes ``scale_factor`` / ``add_offset`` packed integers to
+    float (4x larger as f8). This restores the raw-input form: packed ints with
+    the CF values in ``.attrs``, so both ways of opening write the same store.
+    Unpacked, trivially packed (scale 1, offset 0), or fill-less variables pass
+    through, since NaN cannot be cast to an integer, as do ``_Unsigned``
+    variables (stored signed, decoded unsigned).
+    """
+    enc = da.encoding
+    dtype = np.dtype(enc.get("dtype", da.dtype))
+    fill = enc.get("_FillValue")
+    scale = float(enc.get("scale_factor", 1.0))
+    offset = float(enc.get("add_offset", 0.0))
+    if (
+        not np.issubdtype(da.dtype, np.floating)
+        or not np.issubdtype(dtype, np.integer)
+        or (scale == 1.0 and offset == 0.0)
+        or fill is None
+        or "_Unsigned" in enc
+    ):
+        return da
+    info = np.iinfo(dtype.str)
+    packed = (
+        ((da - offset) / scale).round().fillna(fill).clip(info.min, info.max)
+    ).astype(dtype)
+    packed.attrs = {
+        **da.attrs,
+        "scale_factor": scale,
+        "add_offset": offset,
+        "_FillValue": fill,
+    }
+    packed.encoding = {
+        k: v for k, v in enc.items() if k in ("chunks", "preferred_chunks")
+    }
+    return packed
+
+
 def create_pyramid(
     ds: xr.Dataset,
-    levels: int | None = None,
+    levels: int | Literal["auto"] | None = None,
     *,
     factors: list[int] | None = None,
+    min_dim: int = 256,
     x_dim: str = "x",
     y_dim: str = "y",
     method: CoarseningMethod = "mean",
@@ -160,18 +215,21 @@ def create_pyramid(
         levels: Total number of resolution levels, including the original.
             Level ``0`` is the original resolution; each subsequent level
             coarsens by 2× per spatial dimension (cumulative factors
-            ``[1, 2, 4, ...]``).
+            ``[1, 2, 4, ...]``). ``"auto"`` adds levels until the next one
+            would shrink the smaller spatial dim below ``min_dim``.
         factors: Explicit cumulative downsample factors per level, e.g.
             ``[1, 4, 16]`` for a sparse 4×-spaced pyramid. Must start at 1, be
             strictly increasing, and have each entry integer-divide the next.
             Mutually exclusive with ``levels``.
+        min_dim: Smallest spatial size of the coarsest level when
+            ``levels="auto"`` (default 256, about one tile). Ignored otherwise.
         x_dim: Name of the x (longitude / easting) dimension.
         y_dim: Name of the y (latitude / northing) dimension.
         method: Spatial aggregation method for coarsening. Applied along
             whichever spatial dims a variable carries, so a variable over one
             of them (e.g. a per-column ``profile(time, x)``) is coarsened along
             that dim alone. Integer variables
-            keep their dtype: ``mean`` truncates toward zero (unlike
+            keep their dtype: ``mean`` rounds half to even (unlike
             ``xarray.coarsen``, which promotes to float). ``nearest`` decimates
             (keeps the top-left cell of each window) — use it for categorical
             data such as class codes or masks, where averaging invents values.
@@ -223,11 +281,13 @@ def create_pyramid(
         sparse.write("sparse.zarr")
         ```
     """
-    factors = _resolve_factors(levels, factors)
     validate_method(str(method))
     if chunks_per_shard is not None:
         validate_chunks_per_shard(chunks_per_shard)
     validate_spatial_dims(ds, x_dim, y_dim, action="pyramid")
+    factors = _resolve_factors(
+        levels, factors, min(ds.sizes[x_dim], ds.sizes[y_dim]), min_dim
+    )
     curvilinear = [
         str(name)
         for name, coord in ds.coords.items()
@@ -255,6 +315,7 @@ def create_pyramid(
                 "spatial dim; neither coarsening path can reduce it. Drop it first: "
                 f"ds.drop_vars([{str(name)!r}])"
             )
+    ds = ds.assign({name: _repack(da) for name, da in ds.data_vars.items()})
     crs_str = get_crs(ds)
     level_templates = build_level_templates(ds, factors, x_dim, y_dim)
 
@@ -297,17 +358,19 @@ def create_pyramid(
     )
 
     # _FillValue if declared; else NaN for floats (matches xarray's zarr
-    # default and lets the engine skip all-fill regions)
-    fill_values = {
-        str(name): da.encoding.get(
-            "_FillValue",
-            da.attrs.get(
-                "_FillValue",
-                np.nan if np.issubdtype(da.dtype, np.floating) else None,
-            ),
+    # default and lets the engine skip all-fill regions). An encoding
+    # _FillValue next to scale_factor/add_offset is in packed space: the
+    # decoded data marks missing as NaN, and the packed sentinel may collide
+    # with a valid decoded value.
+    def _fill(da: xr.DataArray) -> float | int | None:
+        default = da.attrs.get(
+            "_FillValue", np.nan if np.issubdtype(da.dtype, np.floating) else None
         )
-        for name, da in ds.data_vars.items()
-    }
+        if {"scale_factor", "add_offset"} & da.encoding.keys():
+            return default
+        return da.encoding.get("_FillValue", default)
+
+    fill_values = {str(name): _fill(da) for name, da in ds.data_vars.items()}
 
     return Pyramid(
         source=ds,
