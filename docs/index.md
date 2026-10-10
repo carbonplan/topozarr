@@ -32,7 +32,7 @@ uv add 'topozarr[tutorial]'
 pip install 'topozarr[tutorial]'
 ```
 
-For faster local writes, add the `zarrs` extra. `Pyramid.write` then uses the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline automatically for local stores (about 2x faster in our benchmarks):
+For faster local writes, add the `zarrs` extra. `Pyramid.write` then uses the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline automatically for local stores:
 
 ```bash
 uv add 'topozarr[zarrs]'
