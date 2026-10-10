@@ -18,11 +18,15 @@ holding:
 
 There are two ways to materialize the plan:
 
-- **`Pyramid.write`** (default): level 0 is streamed from the source dataset,
-  then each level `N` is block-reduced from the already-written level `N - 1`
-  through the Rust kernel (`topozarr_core.block_reduce`), so the source is read
-  exactly once regardless of the number of levels. Work runs on a local thread
-  pool (not Dask). The rest of this document describes this path.
+- **`Pyramid.write`** (default): the source is read once, in level-0 tiles.
+  A tile covers whole shards of levels `0..k`, so each worker writes its tile
+  to level 0, reduces it through the Rust kernel
+  (`topozarr_core.block_reduce`), and writes it to levels `1..k` with no store
+  re-reads and no shared buffers. `k` is the deepest level whose tile still
+  fits `max_region_bytes` and leaves at least one tile per worker. Levels
+  above `k` are block-reduced from the already-written level `N - 1`. Work
+  runs on a local thread pool (not Dask). The rest of this document describes
+  this path.
 - **`Pyramid.as_datatree`**: returns a lazy `xr.DataTree` (levels coarsened via
   `xarray.coarsen`) for Dask-distributed writes. You call `to_zarr` yourself,
   passing `pyramid.encoding`.
@@ -71,8 +75,7 @@ each dimension's extent.
 | `levels` / `factors` | `create_pyramid` | number of levels, or explicit cumulative downsample factors (sparse pyramids) |
 | `target_chunk_bytes` | `create_pyramid` | chunk size on disk |
 | `chunks_per_shard` | `create_pyramid` | shard size = work unit; `None` disables sharding |
-| `max_region_bytes` | `Pyramid.write` | cap on level-0 region widening |
+| `max_region_bytes` | `Pyramid.write` | cap on level-0 tile size (bounds `k` and per-worker memory) |
 | `max_workers` | `Pyramid.write` | thread pool size; `None` = RAM/CPU-derived |
 | codec pipeline | `zarr.config` | zarrs (Rust) used automatically for local stores when the `zarrs` extra is installed |
-| `keep_levels_in_memory` | `Pyramid.write` | keep written levels in RAM to skip re-reads; `None` = auto when they fit |
 | `progress` | `Pyramid.write` | tqdm bar over written regions |

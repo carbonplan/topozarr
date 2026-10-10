@@ -1,14 +1,18 @@
 # Release notes
 
-## Unreleased
+## 0.1.10
 
 ### Performance
 
-- `block_reduce` reads C-contiguous input as row slices and splits work by
-  output row: about 10x faster per block, with byte-identical output.
-- New `zarrs` extra: when installed, `Pyramid.write` uses the zarrs (Rust)
-  codec pipeline for local stores, about 2x faster end to end. Remote stores
-  keep zarr-python's pipeline (zarrs-python#139).
+- `write` produces the lower levels from shared level-0 tiles in memory
+  instead of re-reading them from the store.
+- `block_reduce` has a faster path for C-contiguous input.
+- New `zarrs` extra: when installed, `Pyramid.write` uses the zarrs codec
+  pipeline for local stores.
+
+### Deprecated
+
+- `write(keep_levels_in_memory=...)` is ignored and warns.
 
 ## 0.1.8
 

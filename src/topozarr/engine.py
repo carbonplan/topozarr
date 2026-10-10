@@ -113,7 +113,6 @@ def _write_regions(
     region_shape: tuple[int, ...] | None = None,
     executor: ThreadPoolExecutor | None = None,
     on_region: Callable[[], None] | None = None,
-    on_block: Callable[[Region, np.ndarray], None] | None = None,
     timer: RegionTimer | None = None,
     skip_empty: bool = True,
 ) -> list[Future[None]]:
@@ -122,13 +121,6 @@ def _write_regions(
     With an external ``executor``, tasks are submitted and the pending futures
     returned for the caller to drain; otherwise a pool of ``max_workers`` is
     created, drained, and an empty list returned.
-
-    ``on_block``, if provided, is called with ``(region, block)`` after the
-    block is materialized but before it is written.  The caller is responsible
-    for thread-safety of any shared state mutated inside ``on_block`` (disjoint
-    shard-aligned regions guarantee no two threads touch the same output slice).
-    Time spent in ``on_block`` is reported as ``reduce_s`` in the timer so that
-    ``read_s = block_s - reduce_s`` remains the pure read time.
 
     With ``skip_empty`` (default), regions whose block is entirely
     ``dst.fill_value`` are not written. Besides saving the encode + upload,
@@ -142,18 +134,13 @@ def _write_regions(
         t0 = perf_counter()
         block = get_block(region)
         t1 = perf_counter()
-        if on_block is not None:
-            on_block(region, block)
-        t2 = perf_counter()
         skipped = skip_empty and _is_all_fill(block, fill_value)
         if not skipped:
             dst[region] = block
         if timer is not None:
-            fused_s = (t2 - t1) if on_block is not None else 0.0
             timer.add(
-                block_s=(t1 - t0) + fused_s,
-                reduce_s=fused_s,
-                write_s=perf_counter() - t2,
+                block_s=t1 - t0,
+                write_s=perf_counter() - t1,
                 skipped=skipped,
             )
         if on_region is not None:
@@ -199,7 +186,6 @@ def copy_array(
     max_workers: int | None = None,
     executor: ThreadPoolExecutor | None = None,
     on_region: Callable[[], None] | None = None,
-    on_block: Callable[[Region, np.ndarray], None] | None = None,
     timer: RegionTimer | None = None,
     skip_empty: bool = True,
 ) -> list[Future[None]]:
@@ -238,7 +224,6 @@ def copy_array(
         region_shape=shape,
         executor=executor,
         on_region=on_region,
-        on_block=on_block,
         timer=timer,
         skip_empty=skip_empty,
     )
@@ -261,6 +246,7 @@ def write_tiles(
     method: str,
     fill_value: float | int | None,
     executor: ThreadPoolExecutor,
+    on_region: Callable[[], None] | None = None,
     timer: RegionTimer | None = None,
 ) -> list[Future[None]]:
     """Write ``dsts[0]`` from ``values`` and each ``dsts[j]`` by reducing the
@@ -307,6 +293,8 @@ def write_tiles(
             write_s += perf_counter() - t0
         if timer is not None:
             timer.add(block_s=read_s + reduce_s, reduce_s=reduce_s, write_s=write_s)
+        if on_region is not None:
+            on_region()
 
     return [
         executor.submit(one, region)

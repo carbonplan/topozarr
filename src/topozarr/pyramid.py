@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import math
 import os
+import warnings
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import AbstractContextManager, nullcontext
@@ -11,20 +12,16 @@ from time import perf_counter
 from typing import Any, Literal, cast
 
 import numpy as np
-import psutil
 import xarray as xr
 import zarr
 import zarr.errors
 import zarr.storage
-from topozarr_core import METHODS, block_reduce
+from topozarr_core import METHODS
 
 from .chunking import source_chunks
 from .engine import (
     DEFAULT_MAX_REGION_BYTES,
-    REGION_MEM_FACTOR,
-    Region,
     RegionTimer,
-    copy_array,
     copy_region_shape,
     default_max_workers,
     downsample_level,
@@ -52,33 +49,6 @@ def validate_method(method: str) -> None:
     if method not in METHODS:
         listed = ", ".join(repr(m) for m in METHODS)
         raise ValueError(f"method must be one of {listed}; got {method!r}")
-
-
-def _make_fused_reduce_hook(
-    target: np.ndarray,
-    stride: tuple[int, ...],
-    method: str,
-    fill_value: float | int | None,
-) -> Callable[[Region, np.ndarray], None]:
-    """Return a per-block callback that reduces ``block`` into ``target``.
-
-    Designed for shard-aligned regions: each ``region`` maps to a disjoint
-    slice of ``target``, so no locking is needed across threads.
-    """
-
-    def hook(region: Region, block: np.ndarray) -> None:
-        out = block_reduce(block, stride, method, fill_value, True)
-        # clamp to the target: a trailing region shorter than its stride
-        # yields one window from the kernel but zero rows in the global
-        # trim, so the extra output must be dropped
-        region_out = tuple(
-            slice(s.start // f, min(s.start // f + out.shape[i], n))
-            for i, (s, f, n) in enumerate(zip(region, stride, target.shape))
-        )
-        out_trim = tuple(slice(0, r.stop - r.start) for r in region_out)
-        target[region_out] = out[out_trim]
-
-    return hook
 
 
 ZARRS_PIPELINE = "zarrs.ZarrsCodecPipeline"
@@ -274,53 +244,6 @@ class Pyramid:
                 return k, tiles
         return 0, {n: self._tile_shape(n, 0, max_region_bytes) for n in coarsened_vars}
 
-    def _compute_use_fusion(
-        self,
-        write_levels: list[int],
-        coarsened_vars: list[str],
-        max_region_bytes: int,
-        keep: bool | None,
-    ) -> bool:
-        """Return True if level-pipelining (fused reduce) should be used.
-
-        Fusion keeps each written level in RAM so the next level is produced
-        during the write pass instead of being re-read from the store.
-        """
-        if keep is False or not coarsened_vars or len(write_levels) < 2:
-            return False
-        base_lvl = write_levels[0]
-        if base_lvl not in self.level_templates:
-            return False
-
-        nbytes = sum(
-            math.prod(self.level_templates[lvl][name].shape)
-            * self.level_templates[lvl][name].dtype.itemsize
-            for lvl in write_levels[1:]
-            for name in coarsened_vars
-            if lvl in self.level_templates
-        )
-        max_rb = max(
-            self._region_bytes(base_lvl, name, max_region_bytes)
-            for name in coarsened_vars
-        )
-        # default_max_workers caps the worker budget at available//2 by
-        # construction, so require level buffers + workers to fit in 3/4 of
-        # available memory, leaving >= 1/4 headroom. Workers sized after the
-        # buffers are allocated see the reduced available memory and shrink
-        # accordingly.
-        worker_count = default_max_workers(max_rb)
-        worker_budget = worker_count * REGION_MEM_FACTOR * max_rb
-        budget = max(0, psutil.virtual_memory().available * 3 // 4 - worker_budget)
-
-        if keep is True:
-            if nbytes > budget:
-                raise MemoryError(
-                    f"keep_levels_in_memory=True: need {nbytes / 1e9:.2f} GB but "
-                    f"only {budget / 1e9:.2f} GB of memory budget remains"
-                )
-            return True
-        return nbytes <= budget
-
     def write(
         self,
         store: Any,
@@ -332,17 +255,16 @@ class Pyramid:
         progress: bool = False,
         stats: bool = False,
         keep_levels_in_memory: bool | None = None,
-        _strategy: Literal["levels", "tiles"] = "levels",
     ) -> dict[str, Any] | None:
         """Compute and write pyramid levels to a Zarr store.
 
-        Level 0 is streamed region by region from the source dataset; each
-        subsequent level is block-reduced from the previously written level,
-        streaming shard-sized regions through the Rust kernel on a thread
-        pool. Levels are written sequentially (each reads the previous one);
-        variables within a level are processed in parallel on a shared pool.
-        For bounded memory on large stores, open the source lazily (e.g.
-        ``xr.open_zarr(store, chunks=None)``).
+        The source is read once, in level-0 tiles sized to cover whole shards
+        of levels 0..k; each tile is written to level 0, then reduced and
+        written to levels 1..k by the Rust kernel on a thread pool. Levels
+        above k (whose shards span more than one tile) are block-reduced from
+        the previously written level. Variables are processed in parallel on
+        a shared pool. For bounded memory on large stores, open the source
+        lazily (e.g. ``xr.open_zarr(store, chunks=None)``).
 
         Args:
             store: Anything zarr-python accepts — a local path,
@@ -352,39 +274,27 @@ class Pyramid:
                 pre-existing levels are preserved; ``"w"`` with a levels
                 subset raises if the store already holds data (truncation
                 would delete the levels not being rewritten).
-            max_workers: Thread pool size for region processing. ``None``
+            max_workers: Thread pool size for tile/region processing. ``None``
                 derives a default from the CPU count and available memory
                 (peak memory is roughly ``max_workers * 5 * region_bytes``).
+                The tile pass needs at least this many tiles; with fewer, k
+                is lowered until there are enough.
             levels: Subset of levels to write (e.g. ``[1, 2]``).
                 Defaults to all levels. Each coarsened level reads its
                 predecessor, so level ``N > 0`` must have level ``N - 1``
                 either in the subset or already present in the store.
-            max_region_bytes: Memory budget per level-0 copy region. Regions
-                are widened to cover whole source chunks when that fits the
+            max_region_bytes: Memory budget per level-0 tile. Tiles are
+                widened to cover whole source chunks when that fits the
                 budget, so each source chunk is read once.
-            progress: Show a tqdm progress bar over written regions
+            progress: Show a tqdm progress bar over written tiles/regions
                 (requires ``tqdm``).
             stats: Collect and return per-level timing stats: region shapes,
                 worker count, wall time, and cumulative per-region
-                read/reduce/write seconds (summed across threads).
-
-                With level pipelining active (``keep_levels_in_memory=True``
-                or auto-enabled), level N's ``reduce_s`` captures fused-reduce
-                time (reducing level-N blocks into the level-N+1 buffer) rather
-                than the reduce of level N itself (which is zero when reading
-                from memory).  ``read_s = block_s - reduce_s`` remains the
-                pure source-read time at every level.
-            keep_levels_in_memory: Control level pipelining.  ``None`` (default)
-                auto-enables fusion when the higher levels fit in half the
-                available RAM after accounting for the worker region budget.
-                ``True`` forces fusion and raises ``MemoryError`` if the budget
-                is exceeded.  ``False`` disables fusion and always re-reads from
-                the store.
-            _strategy: Experimental. ``"tiles"`` writes levels 0..k in one
-                pass over level-0 tiles (no re-reads, no fusion buffers);
-                levels above k use the level-by-level path. Stats for the
-                tile pass are reported under level k; progress counts only
-                the levels above k.
+                read/reduce/write seconds (summed across threads). The tile
+                pass is reported as one entry under level k, its
+                ``region_shapes`` being the level-0 tile shapes.
+            keep_levels_in_memory: Deprecated and ignored. The tile pass
+                produces levels 0..k without re-reads or level buffers.
         Examples:
             Write all levels to a local store:
 
@@ -430,28 +340,36 @@ class Pyramid:
                     "mode='a' to preserve them"
                 )
 
+        if keep_levels_in_memory is not None:
+            warnings.warn(
+                "keep_levels_in_memory is deprecated and ignored: levels are "
+                "written from shared level-0 tiles without re-reads",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        tile_k, tiles = self._tile_plan(
+            write_levels, coarsened_vars, max_region_bytes, max_workers
+        )
+        tile_dsts: dict[str, list[zarr.Array]] = {n: [] for n in coarsened_vars}
+        write_levels_set = set(write_levels)
+
         pbar = None
         on_region: Callable[[], None] | None = None
         if progress:
             total = sum(
-                self._region_count(lvl, name, max_region_bytes)
+                math.prod(
+                    math.ceil(n / t)
+                    for n, t in zip(self.level_templates[0][name].shape, tiles[name])
+                )
+                if lvl == tile_k
+                else self._region_count(lvl, name, max_region_bytes)
                 for lvl in write_levels
+                if lvl >= tile_k
                 for name in coarsened_vars
             )
             pbar = _progress_bar(total)
             on_region = pbar.update
-
-        tile_k, tiles = (
-            self._tile_plan(write_levels, coarsened_vars, max_region_bytes, max_workers)
-            if _strategy == "tiles"
-            else (-1, {})
-        )
-        use_fusion = tile_k < 0 and self._compute_use_fusion(
-            write_levels, coarsened_vars, max_region_bytes, keep_levels_in_memory
-        )
-        tile_dsts: dict[str, list[zarr.Array]] = {n: [] for n in coarsened_vars}
-        write_levels_set = set(write_levels)
-        mem_levels: dict[str, np.ndarray] = {}
 
         root = zarr.open_group(store, mode=mode, zarr_format=3)
         for lvl in write_levels:
@@ -516,15 +434,6 @@ class Pyramid:
                         )
                     )
 
-                next_mem, next_stride = self._fusion_buffers(
-                    lvl,
-                    coarsened_vars,
-                    write_levels_set,
-                    use_fusion,
-                    mem_levels,
-                    max_region_bytes,
-                )
-
                 with ThreadPoolExecutor(workers) as ex:
                     futures = [
                         future
@@ -539,6 +448,7 @@ class Pyramid:
                                 method=self.method,
                                 fill_value=_to_python(self.fill_values.get(name)),
                                 executor=ex,
+                                on_region=on_region,
                                 timer=timer,
                             )
                             if lvl == tile_k
@@ -547,20 +457,14 @@ class Pyramid:
                                 level_group,
                                 lvl,
                                 name,
-                                max_region_bytes,
                                 executor=ex,
                                 on_region=on_region,
                                 timer=timer,
-                                mem_source=mem_levels.get(name),
-                                next_level_arr=next_mem.get(name),
-                                next_level_stride=next_stride.get(name),
                             )
                         )
                     ]
                     for future in futures:
                         future.result()
-
-                mem_levels = next_mem
 
                 if timer is not None:
                     all_stats[str(lvl)] = {
@@ -580,100 +484,24 @@ class Pyramid:
                 pbar.close()
         return all_stats if stats else None
 
-    def _fusion_buffers(
-        self,
-        lvl: int,
-        coarsened_vars: list[str],
-        write_levels_set: set[int],
-        use_fusion: bool,
-        mem_levels: dict[str, np.ndarray],
-        max_region_bytes: int,
-    ) -> tuple[dict[str, np.ndarray], dict[str, tuple[int, ...]]]:
-        """Pre-allocate next-level buffers for variables eligible for fusion.
-
-        Eligibility: fusion enabled AND next level exists in the write plan
-        AND this variable is sourced from memory (or we're at level 0)
-        AND each spatial axis of the region shape is even (alignment guard).
-        """
-        next_mem: dict[str, np.ndarray] = {}
-        next_stride: dict[str, tuple[int, ...]] = {}
-        if not (
-            use_fusion
-            and (lvl + 1) in self.level_templates
-            and (lvl + 1) in write_levels_set
-        ):
-            return next_mem, next_stride
-        step = self._step(lvl + 1)
-        for name in coarsened_vars:
-            if lvl > 0 and name not in mem_levels:
-                continue  # no memory source; skip fusion for this var
-            dims = self.level_templates[lvl][name].dims
-            region_shape = self._region_shape(lvl, name, max_region_bytes)
-            # guard checks region shape; the fused hook (s.start // f)
-            # also needs region starts divisible by step -- safe today
-            # because level>0 regions are shard-sized with shape-multiple
-            # starts. If unaligned, fusion is skipped here and it falls
-            # back to the read-from-prev-level downsample_level path
-            # (correct for any stride).
-            spatial_ok = all(
-                region_shape[i] % step == 0
-                for i, d in enumerate(dims)
-                if d in (self.x_dim, self.y_dim)
-            )
-            if not spatial_ok:
-                continue
-            next_da = self.level_templates[lvl + 1][name]
-            next_mem[name] = np.empty(next_da.shape, next_da.dtype)
-            next_stride[name] = tuple(
-                step if d in (self.x_dim, self.y_dim) else 1 for d in dims
-            )
-        return next_mem, next_stride
-
     def _write_var(
         self,
         root: zarr.Group,
         level_group: zarr.Group,
         lvl: int,
         name: str,
-        max_region_bytes: int,
         *,
         executor: ThreadPoolExecutor,
         on_region: Callable[[], None] | None,
         timer: RegionTimer | None = None,
-        mem_source: np.ndarray | None = None,
-        next_level_arr: np.ndarray | None = None,
-        next_level_stride: tuple[int, ...] | None = None,
     ) -> list[Future[None]]:
-        source_da = self.source[name]
-        fill = _to_python(self.fill_values.get(name))
-        dst = self._create_dst(level_group, lvl, name)
-
-        on_block = None
-        if next_level_arr is not None and next_level_stride is not None:
-            on_block = _make_fused_reduce_hook(
-                next_level_arr, next_level_stride, self.method, fill
-            )
-
-        if lvl == 0 or mem_source is not None:
-            values: Any = mem_source if mem_source is not None else source_da.variable
-            sc = None if mem_source is not None else source_chunks(source_da)
-            return copy_array(
-                values,
-                dst,
-                source_chunks=sc,
-                max_region_bytes=max_region_bytes,
-                executor=executor,
-                on_region=on_region,
-                on_block=on_block,
-                timer=timer,
-            )
-
+        """Block-reduce level ``lvl - 1`` of ``name`` into level ``lvl``."""
         return downsample_level(
             cast(zarr.Array, root[f"{lvl - 1}/{name}"]),
-            dst,
+            self._create_dst(level_group, lvl, name),
             stride=self._stride(lvl, name),
             method=self.method,
-            fill_value=fill,
+            fill_value=_to_python(self.fill_values.get(name)),
             executor=executor,
             on_region=on_region,
             timer=timer,
