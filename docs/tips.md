@@ -13,6 +13,9 @@ before anything is written:
 - **Packed integers** (`scale_factor` / `add_offset`, e.g. Sentinel-2 `uint16`)
   are written packed whether the source was opened decoded or with
   `mask_and_scale=False`. Decoded input is re-packed to its stored dtype.
+  Packed input without a `_FillValue`, `_Unsigned` variables, and masked-only
+  integers (e.g. WorldCover `uint8`) stay float; open them with
+  `mask_and_scale=False` to keep the integer dtype.
 
 Need a different grid? Reproject or regrid upstream, then hand the result to `create_pyramid`.
 
