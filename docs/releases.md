@@ -1,5 +1,12 @@
 # Release notes
 
+## 0.1.11
+
+### Fixed
+
+- Each level group now carries the proj attrs, so level arrays inherit the
+  CRS (#46).
+
 ## 0.1.10
 
 ### Performance
