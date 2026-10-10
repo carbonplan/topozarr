@@ -21,6 +21,8 @@ uv sync --group conformance
 uv run pytest -n auto -m conformance
 ```
 
+Coarsening methods are exported by the kernel as `topozarr_core.METHODS`. `create_pyramid(method=...)` validates against it, so a topozarr paired with a core missing a method fails at plan time rather than mid-write. A test keeps the `CoarseningMethod` alias equal to it.
+
 Lint and format:
 
 ```bash

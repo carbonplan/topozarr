@@ -2,7 +2,7 @@
    carbon #1b1e23, chalk #ebebec, teal #64b9c4 */
 
 /* Relative typeface, served from fonts.carbonplan.org.
-   Requires the CDN referer rule to allow carbonplan.github.io. */
+   CDN allowlists carbonplan.github.io and localhost (not 127.0.0.1) by referer. */
 @font-face {
   font-family: "Relative";
   font-weight: 400;
@@ -50,6 +50,10 @@
   --cp-chalk: #ebebec;
   --cp-teal: #64b9c4;
   --cp-teal-dark: #3e8893;
+  --cp-red: #f07071;
+  --cp-orange: #ea9755;
+  --cp-green: #7eb36a;
+  --cp-blue: #85a2f7;
 }
 
 /* Headings in Relative Medium; Material's default 300 weight has no Relative cut */
@@ -58,16 +62,41 @@
   font-weight: 500;
 }
 
-/* Larger logo; Material default is 1.2rem */
+/* Material greys h1 by default, which makes it fainter than h2 */
+.md-typeset h1 {
+  color: var(--md-default-fg-color);
+}
+
+/* Match wordmark tracking */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  letter-spacing: -0.015em;
+}
+
+.md-typeset h2 {
+  border-top: 1px solid var(--md-default-fg-color--lightest);
+  padding-top: 1.2rem;
+}
+
+/* Wordmark lockup in header; Material default is 1.2rem */
 .md-header__button.md-logo img {
-  height: 2rem;
+  height: 1.6rem;
   width: auto;
 }
 
-/* Hide site name in header; logo and sidebar already carry it.
+/* Hide site name in header on desktop, where the logo carries it.
+   Below 76.25em Material hides the logo and the title is all that's left.
    visibility (not display) so the flex spacer keeps search/repo right-aligned. */
-.md-header__title {
-  visibility: hidden;
+@media screen and (min-width: 76.25em) {
+  .md-header__title {
+    visibility: hidden;
+  }
+
+  /* Sidebar "topozarr" label duplicates the header lockup */
+  .md-sidebar--primary .md-nav--primary > .md-nav__title {
+    display: none;
+  }
 }
 
 /* Header stays carbon in both modes so the logo blends in */
@@ -104,4 +133,104 @@
   --md-code-bg-color: #24282f;
   --md-footer-bg-color: #14171b;
   --md-footer-bg-color--dark: #0f1114;
+}
+
+[data-md-color-scheme="default"] {
+  --md-code-bg-color: #f4f4f5;
+  --md-default-fg-color--lightest: rgba(27, 30, 35, 0.12);
+}
+
+/* Home hero */
+.tz-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.tz-hero {
+  text-align: center;
+  padding: 2.5rem 0 1.5rem;
+}
+
+.md-typeset .tz-lockup {
+  width: min(26rem, 90%);
+}
+
+.md-typeset .tz-tagline {
+  font-size: 1.15rem;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  color: var(--md-default-fg-color--light);
+  margin-top: 0.8rem;
+}
+
+/* Active nav item in accent */
+.md-nav__link--active {
+  color: var(--md-accent-fg-color);
+}
+
+/* Admonitions in the CarbonPlan palette */
+.md-typeset .admonition,
+.md-typeset details {
+  border-width: 0 0 0 3px;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.md-typeset :is(.admonition, details):is(.note, .info, .abstract) {
+  border-color: var(--cp-teal);
+}
+.md-typeset :is(.note, .info, .abstract) > :is(.admonition-title, summary) {
+  background-color: color-mix(in srgb, var(--cp-teal) 12%, transparent);
+}
+.md-typeset :is(.note, .info, .abstract) > :is(.admonition-title, summary)::before {
+  background-color: var(--cp-teal);
+}
+
+.md-typeset :is(.admonition, details):is(.tip, .success) {
+  border-color: var(--cp-green);
+}
+.md-typeset :is(.tip, .success) > :is(.admonition-title, summary) {
+  background-color: color-mix(in srgb, var(--cp-green) 12%, transparent);
+}
+.md-typeset :is(.tip, .success) > :is(.admonition-title, summary)::before {
+  background-color: var(--cp-green);
+}
+
+.md-typeset :is(.admonition, details):is(.warning, .question) {
+  border-color: var(--cp-orange);
+}
+.md-typeset :is(.warning, .question) > :is(.admonition-title, summary) {
+  background-color: color-mix(in srgb, var(--cp-orange) 12%, transparent);
+}
+.md-typeset :is(.warning, .question) > :is(.admonition-title, summary)::before {
+  background-color: var(--cp-orange);
+}
+
+.md-typeset :is(.admonition, details):is(.danger, .failure, .bug) {
+  border-color: var(--cp-red);
+}
+.md-typeset :is(.danger, .failure, .bug) > :is(.admonition-title, summary) {
+  background-color: color-mix(in srgb, var(--cp-red) 12%, transparent);
+}
+.md-typeset :is(.danger, .failure, .bug) > :is(.admonition-title, summary)::before {
+  background-color: var(--cp-red);
+}
+
+.md-typeset :is(.admonition, details):is(.example) {
+  border-color: var(--cp-blue);
+}
+.md-typeset :is(.example) > :is(.admonition-title, summary) {
+  background-color: color-mix(in srgb, var(--cp-blue) 12%, transparent);
+}
+.md-typeset :is(.example) > :is(.admonition-title, summary)::before {
+  background-color: var(--cp-blue);
+}
+
+/* keep inline code in tables on one line */
+.md-typeset table:not([class]) code {
+  white-space: nowrap;
+  word-break: normal;
 }

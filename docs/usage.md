@@ -9,7 +9,7 @@ import xarray as xr
 import xproj  # for CRS assignment
 from topozarr import create_pyramid
 
-ds = xr.tutorial.open_dataset('air_temperature').drop_encoding()
+ds = xr.tutorial.open_dataset("air_temperature").drop_encoding()
 ds = ds.proj.assign_crs(spatial_ref="EPSG:4326")
 
 pyramid = create_pyramid(
@@ -32,116 +32,7 @@ To build a non-uniform pyramid, pass `factors` instead of `levels` — explicit 
 pyramid = create_pyramid(ds, factors=[1, 4, 16])
 ```
 
-Levels are always named sequentially (`0, 1, 2, …`) regardless of if you specify `factors`; the downsample factor isn't in the node name but in the multiscales metadata (`layout[i].transform.scale` and each level's `spatial:transform`).
-
-## Input requirements
-
-`create_pyramid` validates these when the plan is built, so a bad input should fail
-before anything is written:
-
-- **`method`** must be one of `mean`, `max`, `min`, `sum`, `nearest` — checked
-  against `topozarr_core.METHODS`.
-- **Spatial coordinates must be 1-D** and uniformly spaced. Curvilinear grids
-  (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected.
-- **Spatial variables** are limited to 4 dimensions.
-
-## Single-resolution datasets (no pyramid)
-
-Lower-resolution datasets often don't need overviews to be visualized with `zarr-layer`. `topozarr` provides two functions that can help visualize Zarr stores without overviews.
-`attach_geozarr_metadata` returns the dataset with the geozarr convention attrs
-(`proj:*`, `spatial:*`, `zarr_conventions`) attached and `recommend_encoding` returns the same
-chunk/shard heuristic `create_pyramid` applies per level.
-`zarr-layer` can render stores without overviews as long as the chunking is friendly for web mapping, so this is a real option and not just a
-data-production convenience. Just remember that there are no overviews, so a zoomed-out read
-still pulls the full resolution.
-
-```python
-from topozarr import attach_geozarr_metadata, recommend_encoding
-
-ds = attach_geozarr_metadata(ds, x_dim="lon", y_dim="lat")
-ds.to_zarr(
-    "flat.zarr",
-    zarr_format=3,
-    consolidated=False,
-    encoding=recommend_encoding(ds, x_dim="lon", y_dim="lat"),
-)
-```
-
-## Dask distributed
-
-Pyramid `write()` does not use Dask — it streams regions through a local thread pool. For Dask-distributed writes, use `as_datatree()`, which returns a lazy `xr.DataTree` with all levels coarsened via `xarray.coarsen`. The recommended per-level chunking and sharding lives in `pyramid.encoding` (already shaped for `DataTree.to_zarr`) — don't forget to pass the recommended encoding in your `to_zarr(..., encoding=pyramid.encoding)` call.
-
-```python
-dt = pyramid.as_datatree()
-dt.to_zarr("pyramid.zarr", zarr_format=3, consolidated=False,
-           encoding=pyramid.encoding)
-```
-
-Deep levels of a Dask-backed source can outrun the chunk band that
-`recommend_encoding` flexes to; if `to_zarr` raises on `safe_chunks`, pass
-`safe_chunks=False`.
-
-## Progress and memory
-
-Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written regions (requires `tqdm` to be installed):
-
-```python
-pyramid.write("pyramid.zarr", progress=True)
-```
-
-The threadpool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 tiles; peak memory is roughly `max_workers * 5 * max_region_bytes`.
-
-`write` reads the source once, in level-0 tiles that cover whole shards of the finer levels, and writes each tile to every level it covers. Memory stays bounded by the tile size, not the raster size.
-
-## Visualization hints
-
-Optional. If you'll render the pyramid in [zarr-layer](https://zarr-layer.demo.carbonplan.org/), `layer_hints` embeds a default colormap and color range so it displays sensibly without manual setup. Skip it otherwise — it has no effect on the data.
-
-```python
-from topozarr.metadata import ZarrLayerVarConfig
-
-pyramid = create_pyramid(
-    ds,
-    levels=2,
-    x_dim="lon",
-    y_dim="lat",
-    layer_hints={"air": ZarrLayerVarConfig(colormap="blues", clim=[230, 310])},
-)
-```
-
-Written into the root `zarr-layer` metadata key; nothing else changes.
-
-## Chunking
-
-`pyramid.encoding` holds the chunk and shard sizes per variable per level; `pyramid.write` applies them automatically.
-
-The heuristics target ~500 KB spatial chunks for web visualization. Tune shard size with `chunks_per_shard` — chunks per shard along each spatial dimension (default `4`). Valid values are powers of 2: `1, 2, 4, 8, 16, 32`. Larger shards mean fewer, bigger reads/writes and higher memory (shards are the unit of work — see [Design](design.md#chunk-and-shard-heuristics)).
-
-| `chunks_per_shard` | chunks/shard | approx shard size |
-|--------------------|:------------:|:-----------------:|
-| 1 | 1 | ~500 KB |
-| 4 (default) | 16 | ~8 MB |
-| 8 | 64 | ~32 MB |
-| 16 | 256 | ~128 MB |
-
-Pass `chunks_per_shard=None` to disable sharding entirely.
-
-### Non-spatial dimensions
-
-`chunks_per_shard` also sets a shard byte budget. Spatial dimensions are sized first; whatever is left over widens non-spatial dimensions (`time`, `band`, ...) instead of leaving them at one element per shard. Chunk size along those dimensions stays 1, so reads still fetch a single element.
-
-To override, edit `pyramid.encoding` before writing. Chunk and shard values are plain tuples in dimension order, so use `.dims` to find the axis — it differs between variables:
-
-```python
-enc = pyramid.encoding["/0"]["wind_speed"]
-axis = pyramid.level_templates[0]["wind_speed"].dims.index("time")
-
-shards = list(enc["shards"])
-shards[axis] = 1  # one timestep per shard
-enc["shards"] = tuple(shards)
-```
-
-Repeat per level and variable. Zarr requires each shard to be a whole multiple of its chunk.
+Levels are always named sequentially (`0, 1, 2, …`) regardless of whether you specify `factors`; the downsample factor isn't in the node name but in the multiscales metadata (`layout[i].transform.scale` and each level's `spatial:transform`).
 
 ## Writing backends
 
@@ -152,6 +43,8 @@ Repeat per level and variable. Zarr requires each shard to be a whole multiple o
 ```python
 pyramid.write("pyramid.zarr")
 ```
+
+For faster local writes, install the `zarrs` extra (see [Tips](tips.md#faster-local-writes)).
 
 ### Icechunk
 
@@ -177,22 +70,42 @@ store = ObjectStore(from_url("s3://carbonplan-scratch/topozarr/air.zarr", region
 pyramid.write(store, mode="w")
 ```
 
-**Tuning / troubleshooting:** `obstore`'s defaults (5s connect / 30s total) can time out under
-heavy concurrency, surfacing as `GenericError` with `"Connect, TimedOut"`. Raise them via
-`client_options`, and consider raising `zarr.config`'s `async.concurrency` for higher S3
-throughput:
+Seeing `"Connect, TimedOut"` errors? See [Tips](tips.md#obstore-timeouts).
+
+## Single-resolution datasets (no pyramid)
+
+Lower-resolution datasets often don't need overviews: `zarr-layer` can render a flat store as long as its chunking is web-friendly. `attach_geozarr_metadata` adds the geozarr convention attrs (`proj:*`, `spatial:*`, `zarr_conventions`), and `recommend_encoding` returns the same chunk/shard heuristic `create_pyramid` applies per level. Without overviews, a zoomed-out read still pulls the full resolution.
 
 ```python
-store = ObjectStore(
-    from_url(
-        "s3://carbonplan-scratch/topozarr/air.zarr",
-        region="us-west-2",
-        client_options={"connect_timeout": "30s", "timeout": "120s"},
-    )
+from topozarr import attach_geozarr_metadata, recommend_encoding
+
+ds = attach_geozarr_metadata(ds, x_dim="lon", y_dim="lat")
+ds.to_zarr(
+    "flat.zarr",
+    zarr_format=3,
+    consolidated=False,
+    encoding=recommend_encoding(ds, x_dim="lon", y_dim="lat"),
 )
-zarr.config.set({"async.concurrency": 128})
 ```
 
-If connect timeouts persist on large instances, try reducing `async.concurrency` or passing a
-smaller `max_workers`.
+## Visualization hints
 
+Optional. If you'll render the pyramid in [zarr-layer](https://zarr-layer.demo.carbonplan.org/), `layer_hints` embeds a default colormap and color range so it displays sensibly without manual setup. Skip it otherwise — it has no effect on the data.
+
+```python
+from topozarr.metadata import ZarrLayerVarConfig
+
+pyramid = create_pyramid(
+    ds,
+    levels=2,
+    x_dim="lon",
+    y_dim="lat",
+    layer_hints={"air": ZarrLayerVarConfig(colormap="blues", clim=[230, 310])},
+)
+```
+
+Written into the root `zarr-layer` metadata key; nothing else changes.
+
+## Chunking
+
+`pyramid.write` applies chunk and shard sizes from `pyramid.encoding` automatically. To tune them, see [Tuning](tuning.md#chunk-and-shard-sizes).

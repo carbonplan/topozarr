@@ -1,5 +1,8 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/carbonplan/topozarr/main/docs/topozarr_logo_name.png" alt="topozarr" width="200">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/carbonplan/topozarr/main/docs/assets/topozarr-lockup-on-dark.svg">
+    <img src="https://raw.githubusercontent.com/carbonplan/topozarr/main/docs/assets/topozarr-lockup-on-light.svg" alt="topozarr" width="320">
+  </picture>
 </p>
 
 
@@ -12,8 +15,6 @@ Follows the [zarr-conventions](https://github.com/zarr-conventions):
 - [multiscales](https://github.com/zarr-conventions/multiscales) — pyramid structure and resolution levels
 - [proj:](https://github.com/zarr-conventions/proj) — coordinate reference system (CRS)
 - [spatial:](https://github.com/zarr-conventions/spatial) — affine transform, bounding box, and dimension names
-
-**Warning: experimental**
 
 
 ### Installation

@@ -3,9 +3,16 @@ hide:
   - toc
 ---
 
-# topozarr
+# topozarr { .tz-hidden }
 
-Create multiscale Zarr stores for web visualization.
+<div class="tz-hero" markdown>
+
+![topozarr](assets/topozarr-lockup-on-light.svg#only-light){ .tz-lockup }
+![topozarr](assets/topozarr-lockup-on-dark.svg#only-dark){ .tz-lockup }
+
+<p class="tz-tagline">Create multiscale Zarr stores for web visualization.</p>
+
+</div>
 
 Built for use with [zarr-layer](https://zarr-layer.demo.carbonplan.org/). Follows the [zarr-conventions](https://github.com/zarr-conventions):
 
@@ -13,38 +20,50 @@ Built for use with [zarr-layer](https://zarr-layer.demo.carbonplan.org/). Follow
 - [proj:](https://github.com/zarr-conventions/proj) — coordinate reference system (CRS)
 - [spatial:](https://github.com/zarr-conventions/spatial) — affine transform, bounding box, and dimension names
 
-!!! warning "Experimental"
-    APIs may change without notice.
-
 ## Installation
 
-```bash
-uv add topozarr
-# or
-pip install topozarr
-```
+=== "uv"
 
-The `tutorial` extra includes everything needed to run the examples in the [Usage](usage.md) guide:
+    ```bash
+    uv add topozarr
 
-```bash
-uv add 'topozarr[tutorial]'
-# or
-pip install 'topozarr[tutorial]'
-```
+    # optional extras
+    uv add 'topozarr[tutorial]'  # deps for the Usage examples
+    uv add 'topozarr[zarrs]'     # faster local writes (Rust codec pipeline)
+    ```
 
-For faster local writes, add the `zarrs` extra. `Pyramid.write` then uses the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline automatically for local stores:
+=== "pip"
 
-```bash
-uv add 'topozarr[zarrs]'
-# or
-pip install 'topozarr[zarrs]'
-```
+    ```bash
+    pip install topozarr
 
-Remote stores keep zarr-python's pipeline until [zarrs-python#139](https://github.com/zarrs/zarrs-python/issues/139) lands. To opt in anyway, set it yourself; `write` leaves an explicitly configured pipeline alone:
+    # optional extras
+    pip install 'topozarr[tutorial]'  # deps for the Usage examples
+    pip install 'topozarr[zarrs]'     # faster local writes (Rust codec pipeline)
+    ```
+
+=== "pixi"
+
+    ```bash
+    pixi add --pypi topozarr
+
+    # optional extras
+    pixi add --pypi 'topozarr[tutorial]'  # deps for the Usage examples
+    pixi add --pypi 'topozarr[zarrs]'     # faster local writes (Rust codec pipeline)
+    ```
+
+## Quick example
 
 ```python
-import zarr
-import zarrs
+import xarray as xr
+import xproj  # for CRS assignment
+from topozarr import create_pyramid
 
-zarr.config.set({"codec_pipeline.path": "zarrs.ZarrsCodecPipeline"})
+ds = xr.tutorial.open_dataset("air_temperature").drop_encoding()
+ds = ds.proj.assign_crs(spatial_ref="EPSG:4326")
+
+pyramid = create_pyramid(ds, levels=2, x_dim="lon", y_dim="lat")
+pyramid.write("pyramid.zarr")
 ```
+
+Open the result in [zarr-layer](https://zarr-layer.demo.carbonplan.org/). See [Usage](usage.md) for cloud stores and options, and [Tips & caveats](tips.md) for performance and gotchas.
