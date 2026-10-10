@@ -422,6 +422,15 @@ def _get_spatial_bbox(
     return [xmin, ymin, xmax, ymax]
 
 
+def level_proj_attrs(crs: str) -> dict[str, Any]:
+    """proj attrs for a level group: proj applies only to direct child arrays."""
+    return {
+        "zarr_conventions": [PROJ_CONVENTION.attrs],
+        "proj:code": crs,
+        "proj:wkt2": CRS.from_user_input(crs).to_wkt(),
+    }
+
+
 def _geozarr_attrs(
     ds: xr.Dataset,
     x_dim: str,
@@ -433,9 +442,8 @@ def _geozarr_attrs(
 ) -> dict[str, Any]:
     """proj + spatial attr block, shared by the flat and multiscale roots."""
     return {
+        **level_proj_attrs(crs),
         "zarr_conventions": [c.attrs for c in conventions],
-        "proj:code": crs,
-        "proj:wkt2": CRS.from_user_input(crs).to_wkt(),
         "spatial:dimensions": [y_dim, x_dim],
         "spatial:registration": "pixel",
         "spatial:transform": transform,
