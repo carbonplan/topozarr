@@ -891,3 +891,52 @@ def test_zarrs_pipeline_matches_default(create_dataset, tmp_path, monkeypatch):
     a = xr.open_datatree(tmp_path / "zarrs.zarr", engine="zarr", consolidated=False)
     b = xr.open_datatree(tmp_path / "default.zarr", engine="zarr", consolidated=False)
     xr.testing.assert_identical(a, b)
+
+
+def _store_bytes(store: zarr.storage.MemoryStore) -> dict[str, bytes]:
+    return {k: v.to_bytes() for k, v in store._store_dict.items()}
+
+
+@pytest.mark.parametrize("method", ["mean", "max", "min", "sum", "nearest"])
+@pytest.mark.parametrize("dtype,fill", [("f4", float("nan")), ("i2", 0), ("f8", None)])
+@pytest.mark.parametrize("factors", [[1, 2, 4, 8], [1, 4, 16], [1, 3, 6]])
+@pytest.mark.parametrize("shard", [None, 16])
+def test_tile_strategy_matches_levels(method, dtype, fill, factors, shard):
+    # ragged shape so trailing tiles hold partial windows at every level
+    ny, nx = 203, 331
+    rng = np.random.default_rng(1)
+    data = ((rng.random((2, ny, nx)) - 0.5) * 200).astype(dtype)
+    if fill is not None:
+        data[:, : ny // 2, : nx // 2] = fill  # all-fill tiles exercise skipping
+        data[rng.random(data.shape) < 0.2] = fill
+    ds = xr.Dataset(
+        {
+            "elev": (("time", "y", "x"), data),
+            "row": (("y",), np.arange(ny, dtype="i2")),
+        },
+        coords={
+            "x": np.arange(nx, dtype="f8"),
+            "y": np.arange(ny, dtype="f8"),
+            "time": np.arange(2),
+        },
+    ).proj.assign_crs(spatial_ref="EPSG:4326")
+    if fill is not None:
+        ds.elev.attrs["_FillValue"] = fill
+    pyr = create_pyramid(ds, factors=factors, method=method, target_chunk_bytes=512)
+    if shard is not None:
+        # uniform small shards: many tiles, ragged at every level
+        for lvl in range(pyr.levels):
+            pyr.encoding[f"/{lvl}"]["elev"].update(
+                chunks=(1, shard // 2, shard // 2), shards=(1, shard, shard)
+            )
+            pyr.encoding[f"/{lvl}"]["row"].update(chunks=(shard // 2,), shards=(shard,))
+
+    k, tiles = pyr._tile_plan(list(range(pyr.levels)), ["elev", "row"], 1 << 20, 2)
+    assert k > 0  # the tile pass must actually fuse levels
+    if shard is not None:
+        assert tiles["elev"][1] < ny or tiles["elev"][2] < nx
+
+    a, b = zarr.storage.MemoryStore(), zarr.storage.MemoryStore()
+    pyr.write(a, max_workers=2, max_region_bytes=1 << 20)
+    pyr.write(b, max_workers=2, max_region_bytes=1 << 20, _strategy="tiles")
+    assert _store_bytes(a) == _store_bytes(b)

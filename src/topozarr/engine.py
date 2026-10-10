@@ -244,6 +244,76 @@ def copy_array(
     )
 
 
+def _sub_regions(region: Region, grid: tuple[int, ...]) -> Iterator[Region]:
+    """Split a grid-aligned ``region`` into its ``grid``-sized cells."""
+    for starts in product(*(range(s.start, s.stop, g) for s, g in zip(region, grid))):
+        yield tuple(
+            slice(a, min(a + g, s.stop)) for a, g, s in zip(starts, grid, region)
+        )
+
+
+def write_tiles(
+    values: Any,
+    dsts: list[zarr.Array],
+    strides: list[tuple[int, ...]],
+    *,
+    tile_shape: tuple[int, ...],
+    method: str,
+    fill_value: float | int | None,
+    executor: ThreadPoolExecutor,
+    timer: RegionTimer | None = None,
+) -> list[Future[None]]:
+    """Write ``dsts[0]`` from ``values`` and each ``dsts[j]`` by reducing the
+    tile written to ``dsts[j-1]`` by ``strides[j]``, one source read per tile.
+
+    ``tile_shape`` must cover whole shards of every ``dsts[j]`` once scaled
+    by the cumulative stride, so no two tiles touch the same shard. Output
+    matches level-by-level ``downsample_level`` (same kernel, same inputs).
+    """
+
+    def one(region: Region) -> None:
+        t0 = perf_counter()
+        block = values[region]
+        if not isinstance(values, np.ndarray):
+            block = np.ascontiguousarray(block)
+        read_s = perf_counter() - t0
+        reduce_s = write_s = 0.0
+        for j, dst in enumerate(dsts):
+            if j:
+                t0 = perf_counter()
+                out = block_reduce(block, strides[j], method, fill_value, True)
+                # clamp to dst: a trailing partial window yields kernel output
+                # that the trimmed level shape drops
+                region = tuple(
+                    slice(s.start // f, min(s.start // f + o, n))
+                    for s, f, o, n in zip(region, strides[j], out.shape, dst.shape)
+                )
+                if any(r.start >= r.stop for r in region):
+                    break
+                block = out[tuple(slice(0, r.stop - r.start) for r in region)]
+                reduce_s += perf_counter() - t0
+            t0 = perf_counter()
+            # write shard by shard so all-fill shards are skipped, as in
+            # _write_regions
+            grid = dst.shards or dst.chunks
+            for sub in _sub_regions(region, grid):
+                local = tuple(
+                    slice(a.start - r.start, a.stop - r.start)
+                    for a, r in zip(sub, region)
+                )
+                part = block[local]
+                if not _is_all_fill(part, dst.fill_value):
+                    dst[sub] = part
+            write_s += perf_counter() - t0
+        if timer is not None:
+            timer.add(block_s=read_s + reduce_s, reduce_s=reduce_s, write_s=write_s)
+
+    return [
+        executor.submit(one, region)
+        for region in shard_aligned_regions(dsts[0], tile_shape)
+    ]
+
+
 def downsample_level(
     src: zarr.Array,
     dst: zarr.Array,

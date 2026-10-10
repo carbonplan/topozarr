@@ -28,6 +28,7 @@ from .engine import (
     copy_region_shape,
     default_max_workers,
     downsample_level,
+    write_tiles,
 )
 
 CoarseningMethod = Literal["mean", "max", "min", "sum", "nearest"]
@@ -216,6 +217,63 @@ class Pyramid:
         region = self._region_shape(lvl, name, max_region_bytes)
         return math.prod(math.ceil(n / r) for n, r in zip(template_da.shape, region))
 
+    def _tile_shape(self, name: str, k: int, max_region_bytes: int) -> tuple[int, ...]:
+        """Level-0 tile covering whole shards of levels 0..k for one variable."""
+        da0 = self.level_templates[0][name]
+        tile = []
+        for d, (dim, n) in enumerate(zip(da0.dims, da0.shape)):
+            t = 1
+            for j in range(k + 1):
+                enc = self.encoding[f"/{j}"][name]
+                f = self.factors[j] if dim in (self.x_dim, self.y_dim) else 1
+                t = math.lcm(t, (enc.get("shards") or enc["chunks"])[d] * f)
+            tile.append(min(t, n))
+        return copy_region_shape(
+            tuple(tile),
+            da0.shape,
+            da0.dtype.itemsize,
+            source_chunks(self.source[name]),
+            max_region_bytes,
+        )
+
+    def _tile_plan(
+        self,
+        write_levels: list[int],
+        coarsened_vars: list[str],
+        max_region_bytes: int,
+        max_workers: int | None,
+    ) -> tuple[int, dict[str, tuple[int, ...]]]:
+        """Deepest level k written in the tile pass, and per-variable tiles.
+
+        k is the largest level such that levels 0..k are all being written,
+        each tile fits ``max_region_bytes``, and there are at least as many
+        tiles as workers. Returns -1 when level 0 is not written.
+        """
+        if not coarsened_vars or 0 not in write_levels:
+            return -1, {}
+        top = 0
+        while top + 1 in write_levels:
+            top += 1
+        for k in range(top, 0, -1):
+            tiles = {
+                n: self._tile_shape(n, k, max_region_bytes) for n in coarsened_vars
+            }
+            nbytes = {
+                n: math.prod(t) * self.level_templates[0][n].dtype.itemsize
+                for n, t in tiles.items()
+            }
+            workers = max_workers or default_max_workers(max(nbytes.values()))
+            count = sum(
+                math.prod(
+                    math.ceil(s / t)
+                    for s, t in zip(self.level_templates[0][n].shape, tile)
+                )
+                for n, tile in tiles.items()
+            )
+            if max(nbytes.values()) <= max_region_bytes and count >= workers:
+                return k, tiles
+        return 0, {n: self._tile_shape(n, 0, max_region_bytes) for n in coarsened_vars}
+
     def _compute_use_fusion(
         self,
         write_levels: list[int],
@@ -274,6 +332,7 @@ class Pyramid:
         progress: bool = False,
         stats: bool = False,
         keep_levels_in_memory: bool | None = None,
+        _strategy: Literal["levels", "tiles"] = "levels",
     ) -> dict[str, Any] | None:
         """Compute and write pyramid levels to a Zarr store.
 
@@ -321,6 +380,11 @@ class Pyramid:
                 ``True`` forces fusion and raises ``MemoryError`` if the budget
                 is exceeded.  ``False`` disables fusion and always re-reads from
                 the store.
+            _strategy: Experimental. ``"tiles"`` writes levels 0..k in one
+                pass over level-0 tiles (no re-reads, no fusion buffers);
+                levels above k use the level-by-level path. Stats for the
+                tile pass are reported under level k; progress counts only
+                the levels above k.
         Examples:
             Write all levels to a local store:
 
@@ -377,9 +441,15 @@ class Pyramid:
             pbar = _progress_bar(total)
             on_region = pbar.update
 
-        use_fusion = self._compute_use_fusion(
+        tile_k, tiles = (
+            self._tile_plan(write_levels, coarsened_vars, max_region_bytes, max_workers)
+            if _strategy == "tiles"
+            else (-1, {})
+        )
+        use_fusion = tile_k < 0 and self._compute_use_fusion(
             write_levels, coarsened_vars, max_region_bytes, keep_levels_in_memory
         )
+        tile_dsts: dict[str, list[zarr.Array]] = {n: [] for n in coarsened_vars}
         write_levels_set = set(write_levels)
         mem_levels: dict[str, np.ndarray] = {}
 
@@ -400,10 +470,14 @@ class Pyramid:
         all_stats: dict[str, Any] = {}
         pipeline = _codec_pipeline(store)
         pipeline.__enter__()
+        t_level = perf_counter()
+        timer = None
         try:
             for lvl in write_levels:
-                t_level = perf_counter()
-                timer = RegionTimer() if stats else None
+                # the tile pass (levels 0..tile_k) is timed as one level
+                if lvl == 0 or lvl > tile_k:
+                    t_level = perf_counter()
+                    timer = RegionTimer() if stats else None
                 template = self.level_templates[lvl]
                 # coords + non-spatial vars + level attrs via xarray
                 side = template.drop_vars(coarsened_vars, errors="ignore")
@@ -424,11 +498,20 @@ class Pyramid:
                     continue
                 level_group = cast(zarr.Group, root[str(lvl)])
 
+                if lvl <= tile_k:
+                    for name in coarsened_vars:
+                        tile_dsts[name].append(self._create_dst(level_group, lvl, name))
+                    if lvl < tile_k:
+                        continue
+
                 workers = max_workers
                 if workers is None:
                     workers = default_max_workers(
                         max(
-                            self._region_bytes(lvl, name, max_region_bytes)
+                            math.prod(tiles[name])
+                            * self.level_templates[0][name].dtype.itemsize
+                            if lvl == tile_k
+                            else self._region_bytes(lvl, name, max_region_bytes)
                             for name in coarsened_vars
                         )
                     )
@@ -446,18 +529,32 @@ class Pyramid:
                     futures = [
                         future
                         for name in coarsened_vars
-                        for future in self._write_var(
-                            root,
-                            level_group,
-                            lvl,
-                            name,
-                            max_region_bytes,
-                            executor=ex,
-                            on_region=on_region,
-                            timer=timer,
-                            mem_source=mem_levels.get(name),
-                            next_level_arr=next_mem.get(name),
-                            next_level_stride=next_stride.get(name),
+                        for future in (
+                            write_tiles(
+                                self.source[name].variable,
+                                tile_dsts[name],
+                                [()]
+                                + [self._stride(j, name) for j in range(1, lvl + 1)],
+                                tile_shape=tiles[name],
+                                method=self.method,
+                                fill_value=_to_python(self.fill_values.get(name)),
+                                executor=ex,
+                                timer=timer,
+                            )
+                            if lvl == tile_k
+                            else self._write_var(
+                                root,
+                                level_group,
+                                lvl,
+                                name,
+                                max_region_bytes,
+                                executor=ex,
+                                on_region=on_region,
+                                timer=timer,
+                                mem_source=mem_levels.get(name),
+                                next_level_arr=next_mem.get(name),
+                                next_level_stride=next_stride.get(name),
+                            )
                         )
                     ]
                     for future in futures:
@@ -469,7 +566,9 @@ class Pyramid:
                     all_stats[str(lvl)] = {
                         "workers": workers,
                         "region_shapes": {
-                            name: self._region_shape(lvl, name, max_region_bytes)
+                            name: tiles[name]
+                            if lvl == tile_k
+                            else self._region_shape(lvl, name, max_region_bytes)
                             for name in coarsened_vars
                         },
                         "wall_s": round(perf_counter() - t_level, 3),
@@ -545,27 +644,9 @@ class Pyramid:
         next_level_arr: np.ndarray | None = None,
         next_level_stride: tuple[int, ...] | None = None,
     ) -> list[Future[None]]:
-        template_da = self.level_templates[lvl][name]
         source_da = self.source[name]
         fill = _to_python(self.fill_values.get(name))
-
-        attrs = _to_python(dict(template_da.attrs))
-        extra_coords = [str(c) for c in source_da.coords if c not in source_da.dims]
-        if extra_coords:
-            attrs["coordinates"] = " ".join(extra_coords)
-
-        enc = self.encoding[f"/{lvl}"][name]
-        dst = level_group.create_array(
-            name=name,
-            shape=template_da.shape,
-            dtype=template_da.dtype,
-            chunks=enc["chunks"],
-            shards=enc.get("shards"),
-            dimension_names=[str(d) for d in template_da.dims],
-            attributes=attrs,
-            fill_value=fill,
-            overwrite=True,
-        )
+        dst = self._create_dst(level_group, lvl, name)
 
         on_block = None
         if next_level_arr is not None and next_level_stride is not None:
@@ -587,19 +668,46 @@ class Pyramid:
                 timer=timer,
             )
 
-        step = self._step(lvl)
-        stride = tuple(
-            step if d in (self.x_dim, self.y_dim) else 1 for d in template_da.dims
-        )
         return downsample_level(
             cast(zarr.Array, root[f"{lvl - 1}/{name}"]),
             dst,
-            stride=stride,
+            stride=self._stride(lvl, name),
             method=self.method,
             fill_value=fill,
             executor=executor,
             on_region=on_region,
             timer=timer,
+        )
+
+    def _stride(self, lvl: int, name: str) -> tuple[int, ...]:
+        """Per-axis stride coarsening ``lvl-1`` into ``lvl`` for one variable."""
+        step = self._step(lvl)
+        return tuple(
+            step if d in (self.x_dim, self.y_dim) else 1
+            for d in self.level_templates[lvl][name].dims
+        )
+
+    def _create_dst(self, level_group: zarr.Group, lvl: int, name: str) -> zarr.Array:
+        template_da = self.level_templates[lvl][name]
+        source_da = self.source[name]
+        fill = _to_python(self.fill_values.get(name))
+
+        attrs = _to_python(dict(template_da.attrs))
+        extra_coords = [str(c) for c in source_da.coords if c not in source_da.dims]
+        if extra_coords:
+            attrs["coordinates"] = " ".join(extra_coords)
+
+        enc = self.encoding[f"/{lvl}"][name]
+        return level_group.create_array(
+            name=name,
+            shape=template_da.shape,
+            dtype=template_da.dtype,
+            chunks=enc["chunks"],
+            shards=enc.get("shards"),
+            dimension_names=[str(d) for d in template_da.dims],
+            attributes=attrs,
+            fill_value=fill,
+            overwrite=True,
         )
 
     def _fill_of(self, name: str) -> float | int | None:
