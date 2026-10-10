@@ -38,7 +38,7 @@ No store re-reads, no shared buffers.
 
 | Method | Each output cell is | Use for |
 |--------|---------------------|---------|
-| `mean` (default) | window mean; integers truncate toward zero | continuous data |
+| `mean` (default) | window mean; integers round half to even | continuous data |
 | `max` / `min` | window max / min | peaks, extents |
 | `sum` | window sum | counts, totals |
 | `nearest` | top-left cell of the window | categorical data (class codes, masks) |

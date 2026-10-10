@@ -81,17 +81,17 @@ def test_block_reduce_int_sum_exact(dtype):
 
 
 @pytest.mark.parametrize("dtype", ["u1", "i2", "i4"])
-def test_block_reduce_int_mean_truncates_toward_zero(dtype):
+def test_block_reduce_int_mean_rounds_half_to_even(dtype):
     dtype = np.dtype(dtype)
-    # left window: 1,2,3,4 -> mean 2.5 -> truncates to 2
-    # right window (signed only): -1,-1,-1,-2 -> mean -1.25 -> truncates
-    # toward zero to -1 (flooring would give -2)
+    # left window: 1,2,3,4 -> mean 2.5 -> ties to even 2
+    # right window: 5,7,5,6 -> 5.75 -> 6 (truncation would give 5);
+    # signed: -2,-2,-1,-2 -> -1.75 -> -2 (truncation would give -1)
     if dtype.kind == "u":
         a = np.array([[1, 2, 5, 7], [3, 4, 5, 6]], dtype=dtype)
-        want = np.array([[2, 5]], dtype=dtype)
+        want = np.array([[2, 6]], dtype=dtype)
     else:
-        a = np.array([[1, 2, -1, -1], [3, 4, -1, -2]], dtype=dtype)
-        want = np.array([[2, -1]], dtype=dtype)
+        a = np.array([[1, 2, -2, -2], [3, 4, -1, -2]], dtype=dtype)
+        want = np.array([[2, -2]], dtype=dtype)
     got = block_reduce(a, (2, 2), "mean")
     np.testing.assert_array_equal(got, want)
     assert got.dtype == dtype

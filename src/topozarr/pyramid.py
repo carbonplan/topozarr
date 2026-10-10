@@ -598,7 +598,7 @@ class Pyramid:
                 da = da.fillna(fill)
             if np.issubdtype(dtype, np.integer):
                 info = np.iinfo(dtype)
-                da = da.clip(info.min, info.max)
+                da = da.round().clip(info.min, info.max)
             restored[str(name)] = da.astype(dtype)
         return ds.assign(restored)
 
@@ -678,6 +678,8 @@ class Pyramid:
         dtype and ``_FillValue`` included, at the cost of an ``f8`` intermediate
         through each coarsen. The exception is an ``f8`` source, where the two
         differ by under 1 ULP on `mean`/`sum` (window summation order).
+        CF-packed sources come back packed (integer dtype, ``scale_factor`` /
+        ``add_offset`` in attrs), matching ``write``.
 
         Raises:
             NotImplementedError: If ``method`` has no ``xarray.coarsen``

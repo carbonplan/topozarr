@@ -54,11 +54,9 @@ def test_pyramid_write_roundtrip(create_dataset):
     np.testing.assert_allclose(dt["1"].ds.x.values, expected.x.values)
 
 
-def test_pyramid_write_integer_mean_truncates(create_dataset):
+def test_pyramid_write_integer_mean_rounds(create_dataset):
     ds = create_dataset(nx=4, ny=2)
-    # row0: 1,2,5,7 -> mean 2.5 -> truncates to 2
-    # row1: 3,4,5,6 -> combined with row0 window: (1+2+3+4)/4=2.5 -> 2,
-    # (5+7+5+6)/4=5.75 -> 5
+    # windows: (1+2+3+4)/4=2.5 -> ties to even 2; (5+7+5+6)/4=5.75 -> 6
     ds["elevation"] = (("y", "x"), np.array([[1, 2, 5, 7], [3, 4, 5, 6]], dtype="i2"))
     pyramid = create_pyramid(ds, levels=2)
     store = zarr.storage.MemoryStore()
@@ -66,7 +64,7 @@ def test_pyramid_write_integer_mean_truncates(create_dataset):
 
     dt = xr.open_datatree(store, engine="zarr", consolidated=False)
     assert dt["1"].ds.elevation.dtype == np.dtype("i2")
-    np.testing.assert_array_equal(dt["1"].ds.elevation.values, [[2, 5]])
+    np.testing.assert_array_equal(dt["1"].ds.elevation.values, [[2, 6]])
 
 
 def test_pyramid_write_nearest_categorical(create_dataset):
@@ -812,3 +810,60 @@ def test_tiles_match_level_by_level(method, dtype, fill, factors, shard):
         pyr.write(a, mode="a", levels=[lvl], **kw)
     pyr.write(b, **kw)
     assert _store_bytes(a) == _store_bytes(b)
+
+
+@pytest.mark.parametrize("as_datatree", [False, True])
+def test_cf_packed_decoded_and_raw_write_the_same(as_datatree):
+    # decoded input is re-packed to uint16; a decoded 0.0 (raw 1000) stays data
+    raw = np.full((8, 8), 1000, dtype="uint16")
+    raw[0, 0] = 0  # _FillValue
+    raw[4:, 4:] = 1234
+    ds = xr.Dataset(
+        {"refl": (("y", "x"), raw * 1e-4 - 0.1)},
+        coords={"x": np.arange(8.0), "y": np.arange(8.0)},
+    )
+    ds["refl"].encoding = {
+        "scale_factor": 1e-4,
+        "add_offset": -0.1,
+        "_FillValue": 0,
+        "dtype": "uint16",
+    }
+    src = zarr.storage.MemoryStore()
+    ds.to_zarr(src, zarr_format=3, consolidated=False)
+
+    outs = []
+    for kw in ({}, {"mask_and_scale": False}):
+        d = xr.open_zarr(src, consolidated=False, **kw)
+        pyramid = create_pyramid(d.proj.assign_crs(spatial_ref="EPSG:4326"), levels=2)
+        out = zarr.storage.MemoryStore()
+        if as_datatree:
+            pyramid.as_datatree().to_zarr(
+                out, zarr_format=3, consolidated=False, encoding=pyramid.encoding
+            )
+        else:
+            pyramid.write(out)
+        outs.append(out)
+
+    for lvl in ("0", "1"):
+        dec, rawd = (zarr.open_array(o, path=f"{lvl}/refl") for o in outs)
+        assert dec.dtype == rawd.dtype == np.dtype("uint16")
+        np.testing.assert_array_equal(dec[:], rawd[:])
+        assert dec.attrs["scale_factor"] == 1e-4
+        assert dec.attrs["add_offset"] == -0.1
+    # window with the fill pixel averages the 3 valid raw 1000s
+    np.testing.assert_array_equal(zarr.open_array(outs[0], path="1/refl")[0, :2], [1000, 1000])
+
+
+def test_cf_unsigned_is_not_repacked():
+    # int16 storage with _Unsigned decodes above int16 max; repacking would wrap
+    from topozarr.coarsen import _repack
+
+    da = xr.DataArray(np.full((2, 2), 60000 * 1e-4), dims=("y", "x"))
+    da.encoding = {
+        "scale_factor": 1e-4,
+        "add_offset": 0.0,
+        "_FillValue": 0,
+        "dtype": "int16",
+        "_Unsigned": "true",
+    }
+    assert _repack(da) is da

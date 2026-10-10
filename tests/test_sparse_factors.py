@@ -126,3 +126,21 @@ def test_write_sparse(create_dataset):
         ds.elevation.values,
         rtol=1e-5,
     )
+
+
+@pytest.mark.parametrize(
+    "nx, ny, min_dim, expected",
+    [
+        (128, 64, 16, [1, 2, 4]),  # smaller dim (y=64) governs: 64 -> 32 -> 16
+        (20, 20, 16, [1]),  # one halving would drop below min_dim
+        (64, 64, 64, [1]),
+    ],
+)
+def test_auto_levels(create_dataset, nx, ny, min_dim, expected):
+    ds = create_dataset(nx=nx, ny=ny)
+    assert create_pyramid(ds, levels="auto", min_dim=min_dim).factors == expected
+
+
+def test_auto_levels_rejects_bad_min_dim(create_dataset):
+    with pytest.raises(ValueError, match="min_dim"):
+        create_pyramid(create_dataset(nx=16, ny=16), levels="auto", min_dim=0)
