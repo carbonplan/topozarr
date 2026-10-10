@@ -7,7 +7,7 @@ import xarray as xr
 import zarr
 
 from topozarr.coarsen import create_pyramid
-from topozarr.metadata import ALL_CONVENTIONS
+from topozarr.metadata import ALL_CONVENTIONS, PROJ_CONVENTION
 
 
 @pytest.mark.parametrize("method", ["mean", "max", "min", "sum", "nearest"])
@@ -257,3 +257,26 @@ def test_conventions_entries_match_schema_consts(create_dataset, case, tmp_path)
         assert not errors, f"{convention.name}: " + "; ".join(
             e.message for e in errors[:5]
         )
+
+
+@pytest.mark.parametrize(
+    "case", CONFORMANCE_CASES.values(), ids=CONFORMANCE_CASES.keys()
+)
+def test_level_groups_carry_proj(create_dataset, case, tmp_path):
+    """proj applies only to direct child arrays, so each level group declares it."""
+    pyramid = _build_case_pyramid(create_dataset, case)
+    nodes = _nodes(pyramid, tmp_path)
+    schema = jsonschema.Draft7Validator(_schema(PROJ_CONVENTION))
+    root_crs = nodes["/"]["attributes"]["proj:code"]
+    for path, node in nodes.items():
+        if path == "/":
+            continue
+        assert node["attributes"]["proj:code"] == root_crs
+        assert not list(schema.iter_errors(node)), path
+
+
+def test_datatree_level_groups_carry_proj(create_dataset):
+    pyramid = create_pyramid(create_dataset(), levels=3)
+    dt = pyramid.as_datatree()
+    for child in dt.children.values():
+        assert child.attrs["proj:code"] == pyramid.attrs["proj:code"]

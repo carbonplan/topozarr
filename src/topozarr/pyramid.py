@@ -27,6 +27,7 @@ from .engine import (
     downsample_level,
     write_tiles,
 )
+from .metadata import level_proj_attrs
 
 CoarseningMethod = Literal["mean", "max", "min", "sum", "nearest"]
 
@@ -412,6 +413,7 @@ class Pyramid:
                         if name in side.variables
                     },
                 )
+                root[str(lvl)].attrs.update(level_proj_attrs(self.attrs["proj:code"]))
                 if not coarsened_vars:
                     continue
                 level_group = cast(zarr.Group, root[str(lvl)])
@@ -684,5 +686,9 @@ class Pyramid:
         ds_chain = self._coarsen_chain()
 
         root_ds = xr.Dataset(attrs=self.attrs)
-        children = {str(lvl): xr.DataTree(ds_chain[lvl]) for lvl in range(self.levels)}
+        proj = level_proj_attrs(self.attrs["proj:code"])
+        children = {
+            str(lvl): xr.DataTree(ds_chain[lvl].assign_attrs(proj))
+            for lvl in range(self.levels)
+        }
         return xr.DataTree(root_ds, children=children)
