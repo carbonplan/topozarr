@@ -188,12 +188,12 @@ def test_write_progress(create_dataset):
 
 
 def test_write_stats(create_dataset):
-    # Disable fusion so level-0 reduce_s is unambiguously 0.
-    pyramid = create_pyramid(create_dataset(nx=16, ny=16), levels=2)
+    pyramid = create_pyramid(create_dataset(nx=16, ny=16), levels=3)
     store = zarr.storage.MemoryStore()
-    out = pyramid.write(store, stats=True, keep_levels_in_memory=False)
-
-    assert set(out) == {"0", "1"}
+    # the tile pass reports one entry, under its deepest level k
+    out = pyramid.write(store, stats=True, max_workers=1)
+    k = int(max(out))
+    assert set(out) == {str(k)}
     for lvl, lvl_stats in out.items():
         assert lvl_stats["regions"] > 0
         assert lvl_stats["workers"] >= 1
@@ -201,9 +201,11 @@ def test_write_stats(create_dataset):
         assert lvl_stats["read_s"] >= 0
         assert lvl_stats["write_s"] >= 0
         assert "elevation" in lvl_stats["region_shapes"]
-    # only coarsened levels run the reduce kernel when fusion is disabled
-    assert out["0"]["reduce_s"] == 0
-    assert out["1"]["reduce_s"] >= 0
+    assert out[str(k)]["reduce_s"] >= 0
+
+    # levels above 0 only: no tile pass, one entry per level
+    out = pyramid.write(store, mode="a", levels=[1, 2], stats=True)
+    assert set(out) == {"1", "2"}
 
     # default stats=False returns None
     assert pyramid.write(zarr.storage.MemoryStore()) is None
@@ -323,130 +325,15 @@ def test_zarr_layer_metadata_written(create_dataset):
     assert zarr_layer["elevation"]["colormap"] == "viridis"
 
 
-# ── level-pipelining (keep_levels_in_memory) ──────────────────────────────────
-
-
 def _read_level(store: zarr.storage.MemoryStore, lvl: int, name: str) -> np.ndarray:
     root = zarr.open_group(store, mode="r")
     return root[f"{lvl}/{name}"][:]
 
 
-@pytest.mark.parametrize("nx,ny", [(16, 16), (15, 13)])
-def test_fused_levels_match_default(create_dataset, nx, ny):
-    """Fused write produces byte-identical output to the store-read path."""
-    ds = create_dataset(nx=nx, ny=ny)
-    pyramid = create_pyramid(ds, levels=3)
-
-    store_ref = zarr.storage.MemoryStore()
-    pyramid.write(store_ref, keep_levels_in_memory=False)
-
-    store_fused = zarr.storage.MemoryStore()
-    pyramid.write(store_fused, keep_levels_in_memory=True)
-
-    for lvl in (1, 2):
-        ref = _read_level(store_ref, lvl, "elevation")
-        got = _read_level(store_fused, lvl, "elevation")
-        np.testing.assert_array_equal(ref, got, err_msg=f"lvl={lvl} nx={nx} ny={ny}")
-
-
-def test_fused_with_nan(create_dataset):
-    """NaN/fill_value variables are handled identically with and without fusion."""
-    ds = create_dataset(nx=16, ny=16)
-    data = ds.elevation.values.copy()
-    data[0, 0] = float("nan")
-    ds["elevation"] = xr.DataArray(
-        data, dims=ds.elevation.dims, coords=ds.elevation.coords
-    )
-
-    pyramid = create_pyramid(ds, levels=2)
-
-    store_ref = zarr.storage.MemoryStore()
-    pyramid.write(store_ref, keep_levels_in_memory=False)
-    store_fused = zarr.storage.MemoryStore()
-    pyramid.write(store_fused, keep_levels_in_memory=True)
-
-    ref = _read_level(store_ref, 1, "elevation")
-    got = _read_level(store_fused, 1, "elevation")
-    np.testing.assert_array_equal(ref, got)
-
-
-def test_fused_multi_variable(create_dataset):
-    """All spatial variables are fused correctly."""
-    ds = create_dataset(nx=16, ny=16)
-    ds["slope"] = ds.elevation * 2
-    pyramid = create_pyramid(ds, levels=2)
-
-    store_ref = zarr.storage.MemoryStore()
-    pyramid.write(store_ref, keep_levels_in_memory=False)
-    store_fused = zarr.storage.MemoryStore()
-    pyramid.write(store_fused, keep_levels_in_memory=True)
-
-    for var in ("elevation", "slope"):
-        ref = _read_level(store_ref, 1, var)
-        got = _read_level(store_fused, 1, var)
-        np.testing.assert_array_equal(ref, got)
-
-
-def test_fused_subset_levels_fallback(create_dataset):
-    """levels=[1, 2] starting above 0 falls back gracefully (no mem_source at L1)."""
-    ds = create_dataset(nx=16, ny=16)
-    pyramid = create_pyramid(ds, levels=3)
-
-    # Write level 0 first so subsequent reads succeed.
-    store = zarr.storage.MemoryStore()
-    pyramid.write(store, levels=[0])
-    pyramid.write(store, mode="a", levels=[1, 2], keep_levels_in_memory=True)
-
-    ref_store = zarr.storage.MemoryStore()
-    pyramid.write(ref_store, keep_levels_in_memory=False)
-
-    for lvl in (1, 2):
-        ref = _read_level(ref_store, lvl, "elevation")
-        got = _read_level(store, lvl, "elevation")
-        np.testing.assert_array_equal(ref, got)
-
-
-def test_fused_forced_fallback_low_memory(create_dataset, monkeypatch):
-    """With a tiny memory budget, auto-mode disables fusion; output still correct."""
-    import psutil
-
-    ds = create_dataset(nx=16, ny=16)
-    pyramid = create_pyramid(ds, levels=2)
-
-    fake_mem = psutil.virtual_memory()._replace(available=1)
-    monkeypatch.setattr(psutil, "virtual_memory", lambda: fake_mem)
-
-    store = zarr.storage.MemoryStore()
-    pyramid.write(store)  # keep_levels_in_memory=None → auto → False due to budget
-
-    ref_store = zarr.storage.MemoryStore()
-    # monkeypatch still active; budget still tiny, so both go through fallback
-    pyramid.write(ref_store, keep_levels_in_memory=False)
-
-    np.testing.assert_array_equal(
-        _read_level(store, 1, "elevation"),
-        _read_level(ref_store, 1, "elevation"),
-    )
-
-
-def test_fused_stats_keys_unchanged(create_dataset):
-    """Stats dict has same keys with fusion enabled; level-0 reduce_s > 0."""
+def test_keep_levels_in_memory_deprecated(create_dataset):
     pyramid = create_pyramid(create_dataset(nx=16, ny=16), levels=2)
-    store = zarr.storage.MemoryStore()
-    out = pyramid.write(store, stats=True, keep_levels_in_memory=True)
-
-    assert set(out) == {"0", "1"}
-    for lvl_stats in out.values():
-        assert "regions" in lvl_stats
-        assert "read_s" in lvl_stats
-        assert "reduce_s" in lvl_stats
-        assert "write_s" in lvl_stats
-        assert "wall_s" in lvl_stats
-    # With fusion, level 0 reduce_s accumulates fused-reduce time.
-    # On tiny test data it rounds to 0; just verify it's non-negative and the
-    # formula read_s = block_s - reduce_s doesn't go negative.
-    assert out["0"]["reduce_s"] >= 0
-    assert out["0"]["read_s"] >= 0
+    with pytest.warns(DeprecationWarning, match="keep_levels_in_memory"):
+        pyramid.write(zarr.storage.MemoryStore(), keep_levels_in_memory=True)
 
 
 def test_as_datatree_matches_native(create_dataset):
@@ -472,25 +359,6 @@ def test_as_datatree_matches_native(create_dataset):
             native_dt[lvl].ds.elevation.values,
             written_dt[lvl].ds.elevation.values,
         )
-
-
-def test_fused_hook_clamps_trailing_window():
-    """A trailing region shorter than the stride yields a kernel window that
-    falls outside the trimmed target; the hook must drop it, not crash."""
-    from topozarr.pyramid import _make_fused_reduce_hook
-
-    src = np.arange(9 * 8, dtype="float32").reshape(9, 8)
-    target = np.full((4, 4), -1, dtype="float32")  # 9 // 2 = 4 rows after trim
-    hook = _make_fused_reduce_hook(target, (2, 2), "mean", None)
-
-    # regions of height 4 tile rows 0-8; the last region is a single row,
-    # which block_reduce turns into one window despite the global trim
-    for start in (0, 4, 8):
-        region = (slice(start, min(start + 4, 9)), slice(0, 8))
-        hook(region, src[region])
-
-    expected = src[:8, :].reshape(4, 2, 4, 2).mean(axis=(1, 3))
-    np.testing.assert_array_equal(target, expected)
 
 
 def test_method_literal_matches_kernel():
@@ -863,3 +731,84 @@ def test_partly_spatial_var_over_kernel_ndim_limit_raises(create_dataset):
 
     with pytest.raises(ValueError, match="topozarr-core supports at most 4"):
         create_pyramid(ds, levels=2)
+
+
+@pytest.mark.parametrize(
+    "store, expect",
+    [("local.zarr", "zarrs"), ("s3://bucket/p.zarr", "default"), (None, "default")],
+)
+def test_codec_pipeline_local_only(tmp_path, store, expect):
+    from topozarr.pyramid import DEFAULT_PIPELINE, ZARRS_PIPELINE, _codec_pipeline
+
+    store = zarr.storage.MemoryStore() if store is None else store
+    with _codec_pipeline(store):
+        got = zarr.config.get("codec_pipeline.path")
+    assert got == (ZARRS_PIPELINE if expect == "zarrs" else DEFAULT_PIPELINE)
+    assert zarr.config.get("codec_pipeline.path") == DEFAULT_PIPELINE
+
+
+def test_zarrs_pipeline_matches_default(create_dataset, tmp_path, monkeypatch):
+    from contextlib import nullcontext
+
+    import topozarr.pyramid
+
+    ds = create_dataset(nx=64, ny=64)
+    create_pyramid(ds, levels=3).write(tmp_path / "zarrs.zarr")
+    monkeypatch.setattr(topozarr.pyramid, "_codec_pipeline", lambda _: nullcontext())
+    create_pyramid(ds, levels=3).write(tmp_path / "default.zarr")
+    a = xr.open_datatree(tmp_path / "zarrs.zarr", engine="zarr", consolidated=False)
+    b = xr.open_datatree(tmp_path / "default.zarr", engine="zarr", consolidated=False)
+    xr.testing.assert_identical(a, b)
+
+
+def _store_bytes(store: zarr.storage.MemoryStore) -> dict[str, bytes]:
+    return {k: v.to_bytes() for k, v in store._store_dict.items()}
+
+
+@pytest.mark.parametrize("method", ["mean", "max", "min", "sum", "nearest"])
+@pytest.mark.parametrize("dtype,fill", [("f4", float("nan")), ("i2", 0), ("f8", None)])
+@pytest.mark.parametrize("factors", [[1, 2, 4, 8], [1, 4, 16], [1, 3, 6]])
+@pytest.mark.parametrize("shard", [None, 16])
+def test_tiles_match_level_by_level(method, dtype, fill, factors, shard):
+    # ragged shape so trailing tiles hold partial windows at every level
+    ny, nx = 203, 331
+    rng = np.random.default_rng(1)
+    data = ((rng.random((2, ny, nx)) - 0.5) * 200).astype(dtype)
+    if fill is not None:
+        data[:, : ny // 2, : nx // 2] = fill  # all-fill tiles exercise skipping
+        data[rng.random(data.shape) < 0.2] = fill
+    ds = xr.Dataset(
+        {
+            "elev": (("time", "y", "x"), data),
+            "row": (("y",), np.arange(ny, dtype="i2")),
+        },
+        coords={
+            "x": np.arange(nx, dtype="f8"),
+            "y": np.arange(ny, dtype="f8"),
+            "time": np.arange(2),
+        },
+    ).proj.assign_crs(spatial_ref="EPSG:4326")
+    if fill is not None:
+        ds.elev.attrs["_FillValue"] = fill
+    pyr = create_pyramid(ds, factors=factors, method=method, target_chunk_bytes=512)
+    if shard is not None:
+        # uniform small shards: many tiles, ragged at every level
+        for lvl in range(pyr.levels):
+            pyr.encoding[f"/{lvl}"]["elev"].update(
+                chunks=(1, shard // 2, shard // 2), shards=(1, shard, shard)
+            )
+            pyr.encoding[f"/{lvl}"]["row"].update(chunks=(shard // 2,), shards=(shard,))
+
+    k, tiles = pyr._tile_plan(list(range(pyr.levels)), ["elev", "row"], 1 << 20, 2)
+    assert k > 0  # the tile pass must actually fuse levels
+    if shard is not None:
+        assert tiles["elev"][1] < ny or tiles["elev"][2] < nx
+
+    # reference: level 0 alone, then each level reduced from the stored one
+    a, b = zarr.storage.MemoryStore(), zarr.storage.MemoryStore()
+    kw = {"max_workers": 2, "max_region_bytes": 1 << 20}
+    pyr.write(a, levels=[0], **kw)
+    for lvl in range(1, pyr.levels):
+        pyr.write(a, mode="a", levels=[lvl], **kw)
+    pyr.write(b, **kw)
+    assert _store_bytes(a) == _store_bytes(b)

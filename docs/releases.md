@@ -1,5 +1,19 @@
 # Release notes
 
+## 0.1.10
+
+### Performance
+
+- `write` produces the lower levels from shared level-0 tiles in memory
+  instead of re-reading them from the store.
+- `block_reduce` has a faster path for C-contiguous input.
+- New `zarrs` extra: when installed, `Pyramid.write` uses the zarrs codec
+  pipeline for local stores.
+
+### Deprecated
+
+- `write(keep_levels_in_memory=...)` is ignored and warns.
+
 ## 0.1.8
 
 ### Fixed

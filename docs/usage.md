@@ -89,9 +89,9 @@ Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written 
 pyramid.write("pyramid.zarr", progress=True)
 ```
 
-The threadpool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 read regions on chunked sources.
+The threadpool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 tiles; peak memory is roughly `max_workers * 5 * max_region_bytes`.
 
-Pass `keep_levels_in_memory=True` to keep levels in RAM and skip re-reading them from the store between levels (faster, but uses more memory). `None` (default) enables this automatically when subsequent levels fit in RAM.
+`write` reads the source once, in level-0 tiles that cover whole shards of the finer levels, and writes each tile to every level it covers. Memory stays bounded by the tile size, not the raster size.
 
 ## Visualization hints
 
