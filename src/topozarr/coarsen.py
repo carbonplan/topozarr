@@ -177,7 +177,7 @@ def _repack(da: xr.DataArray) -> xr.DataArray:
         or "_Unsigned" in enc
     ):
         return da
-    info = np.iinfo(dtype)
+    info = np.iinfo(dtype.str)
     packed = (
         ((da - offset) / scale).round().fillna(fill).clip(info.min, info.max)
     ).astype(dtype)
