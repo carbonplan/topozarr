@@ -1,81 +1,52 @@
-# Design
+# How it works
 
-Details on how `topozarr` turns an Xarray Dataset into a multiscale Zarr store, and
-which knobs control memory and performance.
+## Plan, then write
 
-## Plan / execute split
+[`create_pyramid`][topozarr.coarsen.create_pyramid] is lazy: it returns a
+[`Pyramid`][topozarr.pyramid.Pyramid] plan and writes nothing.
 
-[`create_pyramid`][topozarr.coarsen.create_pyramid] is lazy — no data
-is written. It produces a [`Pyramid`][topozarr.pyramid.Pyramid]
-holding:
+| Field | Holds |
+|-------|-------|
+| `level_templates` | per-level `xr.Dataset`s |
+| `encoding` | chunk and shard sizes per variable per level |
+| `attrs` | root metadata: [multiscales](https://github.com/zarr-conventions/multiscales), [proj](https://github.com/zarr-conventions/proj), [spatial](https://github.com/zarr-conventions/spatial) |
 
-- **level_templates**: per-level `xr.Dataset`s
-- **encoding**: chunk and shard sizes per variable per level.
-- **attrs**: root metadata following the zarr-conventions
-  [multiscales](https://github.com/zarr-conventions/multiscales),
-  [proj](https://github.com/zarr-conventions/geo-proj), and
-  [spatial](https://github.com/zarr-conventions/spatial) specs.
+Two ways to materialize it:
 
-There are two ways to materialize the plan:
+- **`Pyramid.write`** (default): local thread pool, reads the source once.
+- **`Pyramid.as_datatree`**: lazy `xr.DataTree` via `xarray.coarsen`, for
+  Dask. You call `to_zarr` with `pyramid.encoding`.
 
-- **`Pyramid.write`** (default): the source is read once, in level-0 tiles.
-  A tile covers whole shards of levels `0..k`, so each worker writes its tile
-  to level 0, reduces it through the Rust kernel
-  (`topozarr_core.block_reduce`), and writes it to levels `1..k` with no store
-  re-reads and no shared buffers. `k` is the deepest level whose tile still
-  fits `max_region_bytes` and leaves at least one tile per worker. Levels
-  above `k` are block-reduced from the already-written level `N - 1`. Work
-  runs on a local thread pool (not Dask). The rest of this document describes
-  this path.
-- **`Pyramid.as_datatree`**: returns a lazy `xr.DataTree` (levels coarsened via
-  `xarray.coarsen`) for Dask-distributed writes. You call `to_zarr` yourself,
-  passing `pyramid.encoding`.
+## Write path
 
-## Chunk and shard heuristics
+The source is split into level-0 tiles, each covering whole shards of levels
+`0..k`. Each worker:
 
-Spatial dimensions aim for chunks of `target_chunk_bytes` (default
-~500 KB, sized for web visualization).
+1. Writes its tile to level 0.
+2. Reduces it with the Rust kernel (`topozarr_core.block_reduce`).
+3. Writes the result to levels `1..k`.
 
-Shards group `chunks_per_shard` chunks per spatial dimension (default 4, i.e.
-4×4 = 16 chunks, ~8 MB). Shards are also the unit of work during generation:
-larger shards mean fewer, bigger reads/writes and more memory per worker.
+No store re-reads, no shared buffers.
 
-`chunks_per_shard` sets a shard *byte budget* as well. A spatial dimension can
-only hold as many chunks as fit whole, so a small raster — or any sufficiently
-coarse pyramid level — leaves part of that budget unspent. The remainder widens
-non-spatial dimensions instead of being discarded, innermost first, bounded by
-each dimension's extent.
+??? note "How `k` is chosen"
 
-## Kernel semantics
+    `k` is the deepest level whose tile still fits `max_region_bytes` and
+    leaves at least one tile per worker. Levels above `k` are block-reduced
+    from the already-written level `N - 1`.
 
-`topozarr_core.block_reduce`
+## Coarsening methods
 
-- methods: `mean`, `max`, `min`, `sum`, `nearest`, exported as
-  `topozarr_core.METHODS` — the single source the Python layer validates
-  `create_pyramid(method=...)` against, so a topozarr paired with a core
-  that lacks a method fails at plan time rather than mid-write
-- dtypes: `u8`, `u16`, `i16`, `i32`, `i64`, `f32`, `f64`
-- 1–4 dimensional arrays
-- shape follows `xarray.coarsen(boundary="trim")`: trailing partial windows
-  are dropped; an axis smaller than its stride still yields one window
-- `skipna=True` skips NaN and `_FillValue` elements; an all-missing window
-  produces 0 for `sum` (matching `nansum`) and the fill value (or NaN) for
-  `mean`/`max`/`min`
-- integer dtypes stay integer: `mean` truncates toward zero (unlike
-  `xarray.coarsen`, which promotes to float)
-- `nearest` decimates: each window emits its top-left cell, ignoring
-  `skipna`/`fill_value`. Intended for categorical data (class codes, masks)
-  where averaging invents values; corner-pick is exactly composable, so
-  chained per-step decimation equals decimation from native resolution
+| Method | Each output cell is | Use for |
+|--------|---------------------|---------|
+| `mean` (default) | window mean; integers truncate toward zero | continuous data |
+| `max` / `min` | window max / min | peaks, extents |
+| `sum` | window sum | counts, totals |
+| `nearest` | top-left cell of the window | categorical data (class codes, masks) |
 
-## Tuning knobs
-
-| Knob | Where | Effect |
-|------|-------|--------|
-| `levels` / `factors` | `create_pyramid` | number of levels, or explicit cumulative downsample factors (sparse pyramids) |
-| `target_chunk_bytes` | `create_pyramid` | chunk size on disk |
-| `chunks_per_shard` | `create_pyramid` | shard size = work unit; `None` disables sharding |
-| `max_region_bytes` | `Pyramid.write` | cap on level-0 tile size (bounds `k` and per-worker memory) |
-| `max_workers` | `Pyramid.write` | thread pool size; `None` = RAM/CPU-derived |
-| codec pipeline | `zarr.config` | zarrs (Rust) used automatically for local stores when the `zarrs` extra is installed |
-| `progress` | `Pyramid.write` | tqdm bar over written regions |
+- **Missing values:** NaN and `_FillValue` are skipped. An all-missing window
+  gives 0 for `sum` and the fill value (or NaN) otherwise. `nearest` ignores
+  both.
+- **Dtypes:** `u8`, `u16`, `i16`, `i32`, `i64`, `f32`, `f64`; integers stay
+  integer (unlike `xarray.coarsen`, which promotes to float).
+- **Shape:** matches `xarray.coarsen(boundary="trim")`; trailing partial
+  windows are dropped.
