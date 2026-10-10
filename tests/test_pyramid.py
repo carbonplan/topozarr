@@ -851,7 +851,9 @@ def test_cf_packed_decoded_and_raw_write_the_same(as_datatree):
         assert dec.attrs["scale_factor"] == 1e-4
         assert dec.attrs["add_offset"] == -0.1
     # window with the fill pixel averages the 3 valid raw 1000s
-    np.testing.assert_array_equal(zarr.open_array(outs[0], path="1/refl")[0, :2], [1000, 1000])
+    np.testing.assert_array_equal(
+        zarr.open_array(outs[0], path="1/refl")[0, :2], [1000, 1000]
+    )
 
 
 def test_cf_unsigned_is_not_repacked():
