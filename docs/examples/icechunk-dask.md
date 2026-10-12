@@ -49,11 +49,11 @@ print(dt["1"].air.encoding["dtype"], dt["1"].air.encoding["shards"])
 
 ## Write with Dask
 
-`Pyramid.write` runs on a local thread pool. For Dask (e.g. a distributed cluster), `as_datatree()` returns a lazy DataTree; pass `pyramid.encoding` to keep the recommended chunks and shards, and `align_chunks=True` so xarray rechunks Dask to nest in them:
+`Pyramid.write` runs on a local thread pool. For Dask (e.g. a distributed cluster), `as_datatree()` returns a lazy DataTree; pass `pyramid.encoding` to keep the recommended chunks and shards. The shards are sized to divide the Dask chunks, so no rechunk is needed:
 
 ```python exec="on" source="above" session="icechunk" result="text"
 lazy = pyramid.as_datatree()
-lazy.to_zarr("air-dask.zarr", zarr_format=3, consolidated=False, mode="w", encoding=pyramid.encoding, align_chunks=True)
+lazy.to_zarr("air-dask.zarr", zarr_format=3, consolidated=False, mode="w", encoding=pyramid.encoding)
 print(lazy)
 ```
 

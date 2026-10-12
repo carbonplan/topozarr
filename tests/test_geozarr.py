@@ -397,3 +397,20 @@ def test_pyramid_dask_safety_ends_when_blocks_outrun_the_chunk_band(create_datas
         encoding=pyramid.encoding,
         safe_chunks=False,
     )
+
+
+def test_pyramid_datatree_writes_dask_unaided_nonspatial(create_dataset):
+    """Non-spatial shards divide the dask block too (air_temperature: time=730)."""
+    from topozarr import create_pyramid
+
+    ds = create_dataset(nx=53, ny=25, extra_dims={"time": 2920}).chunk({"time": 730})
+    pyramid = create_pyramid(ds, levels=2)
+    for lvl in range(2):
+        assert 730 % pyramid.encoding[f"/{lvl}"]["elevation"]["shards"][0] == 0
+
+    pyramid.as_datatree().to_zarr(
+        zarr.storage.MemoryStore(),
+        zarr_format=3,
+        consolidated=False,
+        encoding=pyramid.encoding,
+    )
