@@ -70,6 +70,8 @@ docs = [
     "netcdf4>=1.7.4",
     "pooch>=1.9.0",
     "rioxarray>=0.23.0",
+    "virtualizarr[hdf]>=2.7.3",
+    "xarray-regrid>=0.4.2",
 ]
 
 
@@ -85,7 +87,6 @@ markers = [
 ]
 
 [tool.uv.sources]
-virtualizarr = { git = "https://github.com/zarr-developers/VirtualiZarr", rev = "3c10c433b29dddad98169c298d36ead192f0aad1" }
 topozarr-core = { workspace = true }
 
 [tool.uv.workspace]
