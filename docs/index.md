@@ -12,13 +12,23 @@ hide:
 
 <p class="tz-tagline">Create multiscale Zarr stores for web visualization.</p>
 
+Built for use with [zarr-layer](https://zarr-layer.demo.carbonplan.org/). Writes [Zarr v3](https://zarr-specs.readthedocs.io/en/latest/v3/core/index.html) stores that follow the [GeoZarr](https://github.com/zarr-developers/geozarr-spec) conventions.
+{ .tz-subline }
+
 </div>
 
-Built for use with [zarr-layer](https://zarr-layer.demo.carbonplan.org/). Follows the [zarr-conventions](https://github.com/zarr-conventions):
+<div class="grid cards tz-conventions" markdown>
 
-- [multiscales](https://github.com/zarr-conventions/multiscales) — pyramid structure and resolution levels
-- [proj:](https://github.com/zarr-conventions/proj) — coordinate reference system (CRS)
-- [spatial:](https://github.com/zarr-conventions/spatial) — affine transform, bounding box, and dimension names
+-   **[multiscales](geozarr.md#multiscales)**  
+    Which groups are levels and how each derives from the last.
+
+-   **[proj](geozarr.md#proj)**  
+    Which coordinate reference system the data uses.
+
+-   **[spatial](geozarr.md#spatial)**  
+    How array indices map to coordinates.
+
+</div>
 
 ## Installation
 
@@ -66,4 +76,4 @@ pyramid = create_pyramid(ds, levels=2, x_dim="lon", y_dim="lat")
 pyramid.write("pyramid.zarr")
 ```
 
-Open the result in [zarr-layer](https://zarr-layer.demo.carbonplan.org/). See [Usage](usage.md) for cloud stores and options, and [Tips & caveats](tips.md) for performance and gotchas.
+Open the result in [zarr-layer](https://zarr-layer.demo.carbonplan.org/). See [Usage](usage.md) for cloud stores and options, and [Tips and caveats](tips.md) for performance settings and common problems.

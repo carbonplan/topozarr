@@ -1,0 +1,84 @@
+<svg role="img" aria-label="Three pyramid levels covering the same extent at halving resolution" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 400" width="720" height="400">
+<polygon points="210,220 339.9,295 210,370 80.1,295" stroke-width="1.6" stroke-linejoin="round" style="fill:var(--tz-fig-bg);stroke:var(--tz-fig-fg)">
+</polygon>
+<line x1="226.24" y1="229.38" x2="96.33" y2="304.38" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="193.76" y1="229.38" x2="323.67" y2="304.38" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="242.48" y1="238.75" x2="112.57" y2="313.75" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="177.52" y1="238.75" x2="307.43" y2="313.75" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="258.71" y1="248.13" x2="128.81" y2="323.13" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="161.29" y1="248.13" x2="291.19" y2="323.13" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="274.95" y1="257.5" x2="145.05" y2="332.5" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="145.05" y1="257.5" x2="274.95" y2="332.5" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="291.19" y1="266.88" x2="161.29" y2="341.88" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="128.81" y1="266.88" x2="258.71" y2="341.88" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="307.43" y1="276.25" x2="177.52" y2="351.25" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="112.57" y1="276.25" x2="242.48" y2="351.25" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="323.67" y1="285.63" x2="193.76" y2="360.63" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="96.33" y1="285.63" x2="226.24" y2="360.63" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<polygon points="210,220 339.9,295 210,370 80.1,295" fill="none" stroke-width="1.6" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<line x1="80.1" y1="205" x2="80.1" y2="295" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 4" style="stroke:var(--tz-fig-secondary)">
+</line>
+<line x1="339.9" y1="205" x2="339.9" y2="295" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 4" style="stroke:var(--tz-fig-secondary)">
+</line>
+<line x1="210" y1="280" x2="210" y2="370" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 4" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="210,130 339.9,205 210,280 80.1,205" stroke-width="1.6" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<line x1="242.48" y1="148.75" x2="112.57" y2="223.75" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="177.52" y1="148.75" x2="307.43" y2="223.75" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="274.95" y1="167.5" x2="145.05" y2="242.5" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="145.05" y1="167.5" x2="274.95" y2="242.5" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="307.43" y1="186.25" x2="177.52" y2="261.25" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="112.57" y1="186.25" x2="242.48" y2="261.25" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<polygon points="210,130 339.9,205 210,280 80.1,205" fill="none" stroke-width="1.6" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<line x1="80.1" y1="115" x2="80.1" y2="205" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 4" style="stroke:var(--tz-fig-secondary)">
+</line>
+<line x1="339.9" y1="115" x2="339.9" y2="205" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 4" style="stroke:var(--tz-fig-secondary)">
+</line>
+<line x1="210" y1="190" x2="210" y2="280" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 4" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="210,40 339.9,115 210,190 80.1,115" stroke-width="1.6" stroke-linejoin="round" style="fill:var(--cp-blue);stroke:var(--tz-fig-fg)">
+</polygon>
+<line x1="274.95" y1="77.5" x2="145.05" y2="152.5" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="145.05" y1="77.5" x2="274.95" y2="152.5" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<polygon points="210,40 339.9,115 210,190 80.1,115" fill="none" stroke-width="1.6" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<line x1="349.9" y1="295" x2="379.9" y2="295" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<text x="391.9" y="291" font-family="Relative, sans-serif" font-size="14" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">level 0</text>
+<text x="391.9" y="309" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">8 × 8 · native resolution</text>
+<line x1="349.9" y1="205" x2="379.9" y2="205" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<text x="391.9" y="201" font-family="Relative, sans-serif" font-size="14" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">level 1</text>
+<text x="391.9" y="219" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">4 × 4 · 2× coarser</text>
+<line x1="349.9" y1="115" x2="379.9" y2="115" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<text x="391.9" y="111" font-family="Relative, sans-serif" font-size="14" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">level 2</text>
+<text x="391.9" y="129" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">2 × 2 · 4× coarser</text>
+<text x="24" y="28" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">create_pyramid(ds, levels=3)</text>
+<text x="392" y="384" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">same extent, half the cells per dimension</text>
+</svg>

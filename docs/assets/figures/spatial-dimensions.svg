@@ -1,0 +1,34 @@
+<svg role="img" aria-label="spatial:dimensions names the Y and X dimensions; time is not spatial" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 236" width="720" height="236">
+<text x="24" y="69" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">dimension_names</text>
+<text x="24" y="175" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">spatial:dimensions</text>
+<text x="256" y="34" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">0</text>
+<rect x="200" y="44" width="112" height="40" fill="none" stroke-width="1.4" stroke-dasharray="4 3" style="stroke:var(--tz-fig-secondary)">
+</rect>
+<text x="256" y="69" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" text-anchor="middle" style="fill:var(--tz-fig-secondary)">time</text>
+<text x="384" y="34" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">1</text>
+<rect x="328" y="44" width="112" height="40" stroke-width="1.4" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="384" y="69" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" text-anchor="middle" style="fill:var(--tz-fig-fg)">lat</text>
+<text x="512" y="34" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">2</text>
+<rect x="456" y="44" width="112" height="40" stroke-width="1.4" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="512" y="69" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" text-anchor="middle" style="fill:var(--tz-fig-fg)">lon</text>
+<text x="256" y="106" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">not spatial</text>
+<rect x="328" y="150" width="112" height="40" stroke-width="1" rx="5" style="fill:var(--tz-fig-orange-tint);stroke:var(--cp-orange)">
+</rect>
+<text x="384" y="175" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" text-anchor="middle" style="fill:var(--tz-fig-fg)">&#34;lat&#34;</text>
+<text x="384" y="214" font-family="Relative, sans-serif" font-size="14" text-anchor="middle" font-weight="500" style="fill:var(--tz-fig-fg)">Y</text>
+<line x1="384" y1="144" x2="384" y2="97" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="384,90 388.2,97 379.8,97" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-secondary)">
+</polygon>
+<rect x="456" y="150" width="112" height="40" stroke-width="1" rx="5" style="fill:var(--tz-fig-orange-tint);stroke:var(--cp-orange)">
+</rect>
+<text x="512" y="175" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14" text-anchor="middle" style="fill:var(--tz-fig-fg)">&#34;lon&#34;</text>
+<text x="512" y="214" font-family="Relative, sans-serif" font-size="14" text-anchor="middle" font-weight="500" style="fill:var(--tz-fig-fg)">X</text>
+<line x1="512" y1="144" x2="512" y2="97" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="512,90 516.2,97 507.8,97" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-secondary)">
+</polygon>
+<text x="592" y="175" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">ordered [Y, X]</text>
+</svg>

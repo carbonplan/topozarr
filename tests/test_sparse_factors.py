@@ -38,11 +38,11 @@ def test_sparse_factors_metadata(create_dataset):
     attrs = create_pyramid(ds, factors=[1, 4, 16]).attrs
     layout = attrs["multiscales"]["layout"]
 
-    # step 1->4: scale 4.0, translation (4-1)/2 = 1.5 on spatial axes
+    # step 1->4: scale 4.0 on spatial axes, translation 0 (shared corner origin)
     scale1 = layout[1]["transform"]["scale"]
     trans1 = layout[1]["transform"]["translation"]
     assert scale1 == [4.0, 4.0]
-    assert trans1 == [1.5, 1.5]
+    assert trans1 == [0.0, 0.0]
 
     native_res = abs(attrs["spatial:transform"][0])
     # per-level spatial:transform resolution == native * cumulative factor
@@ -61,9 +61,9 @@ def test_non_uniform_factors(create_dataset):
 
     layout = pyramid.attrs["multiscales"]["layout"]
     assert layout[1]["transform"]["scale"] == [2.0, 2.0]
-    assert layout[1]["transform"]["translation"] == [0.5, 0.5]
+    assert layout[1]["transform"]["translation"] == [0.0, 0.0]
     assert layout[2]["transform"]["scale"] == [4.0, 4.0]
-    assert layout[2]["transform"]["translation"] == [1.5, 1.5]
+    assert layout[2]["transform"]["translation"] == [0.0, 0.0]
 
     store = zarr.storage.MemoryStore()
     pyramid.write(store)

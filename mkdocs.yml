@@ -24,6 +24,7 @@ theme:
         icon: material/brightness-7
         name: Switch to dark mode
   features:
+    - navigation.sections
     - navigation.top
     - content.code.copy
     - content.code.annotate
@@ -42,6 +43,8 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      check_paths: true
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
@@ -70,15 +73,19 @@ plugins:
 
 nav:
   - Home: index.md
-  - Usage: usage.md
-  - Tuning: tuning.md
+  - Guide:
+      - Usage: usage.md
+      - Tuning: tuning.md
+      - Tips and caveats: tips.md
   - Examples:
       - Categorical data: examples/categorical.md
       - Icechunk and Dask: examples/icechunk-dask.md
       - Regridding: examples/regrid.md
-      - Virtual level 0: examples/hybrid-icechunk.md
-  - Tips & caveats: tips.md
-  - How it works: design.md
-  - API Reference: api.md
-  - Contributing: contributing.md
-  - Release notes: releases.md
+      - Hybrid stores: examples/hybrid-icechunk.md
+  - Concepts:
+      - How it works: design.md
+      - GeoZarr: geozarr.md
+  - Reference:
+      - API: api.md
+      - Release notes: releases.md
+      - Contributing: contributing.md

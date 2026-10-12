@@ -1,52 +1,73 @@
 # How it works
 
+This page describes what `topozarr` does under the hood: how it plans a pyramid, how it writes one, and how each coarsening method combines cells.
+
 ## Plan, then write
 
-[`create_pyramid`][topozarr.coarsen.create_pyramid] is lazy: it returns a
+[`create_pyramid`][topozarr.coarsen.create_pyramid] is lazy. It returns a
 [`Pyramid`][topozarr.pyramid.Pyramid] plan and writes nothing.
+
+<div class="tz-figure">
+--8<-- "docs/assets/figures/plan-write.svg"
+</div>
 
 | Field | Holds |
 |-------|-------|
-| `level_templates` | per-level `xr.Dataset`s |
-| `encoding` | chunk and shard sizes per variable per level |
-| `attrs` | root metadata: [multiscales](https://github.com/zarr-conventions/multiscales), [proj](https://github.com/zarr-conventions/proj), [spatial](https://github.com/zarr-conventions/spatial) |
+| `level_templates` | One `xr.Dataset` per level |
+| `encoding` | Chunk and shard sizes for each variable at each level |
+| `attrs` | Root metadata: [multiscales](https://github.com/zarr-conventions/multiscales), [proj](https://github.com/zarr-conventions/proj), [spatial](https://github.com/zarr-conventions/spatial) ([layout](geozarr.md)) |
 
-Two ways to materialize it:
+There are two ways to turn the plan into data:
 
-- **`Pyramid.write`** (default): local thread pool, reads the source once.
-- **`Pyramid.as_datatree`**: lazy `xr.DataTree` via `xarray.coarsen`, for
-  Dask. You call `to_zarr` with `pyramid.encoding`.
+- **`Pyramid.write`** (default) uses a local thread pool and reads the source
+  only once.
+- **`Pyramid.as_datatree`** returns a lazy `xr.DataTree` built with
+  `xarray.coarsen`, for use with Dask. You then call `to_zarr` with
+  `pyramid.encoding`.
 
 ## Write path
 
-The source is split into level-0 tiles, each covering whole shards of levels
-`0..k`. Each worker:
+`write` splits the source into level `0` tiles, each covering whole shards of
+levels `0..k`. Each worker:
 
-1. Writes its tile to level 0.
-2. Reduces it with the Rust kernel (`topozarr_core.block_reduce`).
-3. Writes the result to levels `1..k`.
+1. Writes its tile to level `0`.
+2. For each level `1..k`, reduces the previous level's block with the Rust
+   kernel (`topozarr_core.block_reduce`), then writes the result.
 
-No store re-reads, no shared buffers.
+This way, levels `0..k` never re-read from the store or share buffers between
+workers.
+
+<div class="tz-figure">
+--8<-- "docs/assets/figures/write-path.svg"
+</div>
 
 ??? note "How `k` is chosen"
 
-    `k` is the deepest level whose tile still fits `max_region_bytes` and
-    leaves at least one tile per worker. Levels above `k` are block-reduced
-    from the already-written level `N - 1`.
+    `k` is the deepest level whose tile still fits in `max_region_bytes` and
+    leaves at least one tile per worker. Each level after `k` is reduced
+    from the previous level, which is already written.
 
 ## Coarsening methods
 
+<div class="tz-figure">
+--8<-- "docs/assets/figures/methods.svg"
+</div>
+
 | Method | Each output cell is | Use for |
 |--------|---------------------|---------|
-| `mean` (default) | window mean; integers round half to even | continuous data |
-| `max` / `min` | window max / min | peaks, extents |
-| `sum` | window sum | counts, totals |
-| `nearest` | top-left cell of the window | categorical data (class codes, masks) |
+| `mean` (default) | Window mean. Integers round half to even | Continuous data |
+| `max`, `min` | Window maximum or minimum | Peaks and extents |
+| `sum` | Window sum | Counts and totals |
+| `nearest` | Top-left cell of the window | Categorical data (class codes, masks) |
 
-- **Missing values:** NaN and `_FillValue` are skipped. An all-missing window
-  gives 0 for `sum` and the fill value (or NaN) otherwise. `nearest` ignores
-  both.
-- **Dtypes:** `u8`, `u16`, `i16`, `i32`, `i64`, `f32`, `f64`; integers stay
-  integer (unlike `xarray.coarsen`, which promotes to float).
-- **Shape:** matches `xarray.coarsen(boundary="trim")`; trailing partial
-  windows are dropped.
+- **Missing values:** NaN and `_FillValue` are skipped. A window with only
+  missing values gives 0 for `sum` and the fill value (or NaN) for the other
+  methods. `nearest` ignores both and copies the cell as is.
+- **Dtypes:** `u8`, `u16`, `i16`, `i32`, `i64`, `f32`, and `f64`. Integers
+  stay integers (unlike `xarray.coarsen`, which promotes them to float).
+- **Shape:** matches `xarray.coarsen(boundary="trim")`, so partial windows at
+  the trailing edges are dropped.
+
+<div class="tz-figure">
+--8<-- "docs/assets/figures/trim.svg"
+</div>

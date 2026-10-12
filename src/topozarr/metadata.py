@@ -505,15 +505,11 @@ def create_multiscale_metadata(
 
     def get_multiscales_transform(level: int) -> dict[str, Any]:
         # scale is relative to derived_from: the per-step ratio, not cumulative.
-        # translation is the pixel-registration half-cell shift ((step-1)/2;
-        # step=2 -> 0.5).
+        # translation is 0: levels share the spatial:transform corner origin
+        # (spatial README, "Usage with multiscales").
         step = factors[level] // factors[level - 1]
         s = [float(step) if (level > 0 and d in spatial_dims) else 1.0 for d in ds.dims]
-        t = [
-            (step - 1) / 2 if (level > 0 and d in spatial_dims) else 0.0
-            for d in ds.dims
-        ]
-        return {"scale": s, "translation": t}
+        return {"scale": s, "translation": [0.0] * len(ds.dims)}
 
     def get_level_spatial_attrs(level: int) -> dict[str, Any]:
         level_ds = level_datasets[level]

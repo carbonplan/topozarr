@@ -1,24 +1,26 @@
 # Regridding
 
-`create_pyramid` only coarsens: it needs a uniform 1-D grid and keeps it. To change the grid (resolution, extent, or a non-uniform source grid), regrid first. This page uses [xarray-regrid](https://github.com/EXCITED-CO2/xarray-regrid) to put one day of `air_temperature` on a 0.5° grid, then builds the pyramid.
+`create_pyramid` only coarsens. It needs a uniform 1-D grid, and it keeps that grid. To change the resolution or extent, or to start from a non-uniform grid, regrid first. This example uses [xarray-regrid](https://github.com/EXCITED-CO2/xarray-regrid) to put one day of `air_temperature` on a 0.5° grid, then builds the pyramid.
 
 ```python exec="on" session="regrid"
-# hidden: render matplotlib figures inline
-import base64
-from io import BytesIO
+# hidden: render CarbonPlan-themed light and dark figures inline
+import sys
 
 import matplotlib
 
 matplotlib.use("Agg")
 
 
-def show(fig):
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
-    print(f'<img src="data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}">')
+sys.path.insert(0, "scripts")
+from docs_plot import render  # noqa: E402
+
+
+# print here is markdown-exec's captured print, not the module's
+def show(plot):
+    print(render(plot))
 ```
 
-```python exec="on" source="above" session="regrid" result="text"
+```python exec="on" source="above" session="regrid" result="python"
 import xarray as xr
 import xarray_regrid  # noqa: F401
 import xproj  # noqa: F401
@@ -33,7 +35,7 @@ fine = ds.regrid.linear(target).proj.assign_crs(spatial_ref="EPSG:4326")
 print(dict(fine.sizes))
 ```
 
-```python exec="on" source="above" session="regrid" result="text"
+```python exec="on" source="above" session="regrid" result="python"
 from topozarr import create_pyramid
 
 create_pyramid(fine, levels=3, x_dim="lon", y_dim="lat").write("regrid.zarr")
@@ -44,10 +46,20 @@ print({level: dict(dt[level].sizes) for level in dt.children})
 ```python exec="on" source="above" session="regrid" html="true"
 import matplotlib.pyplot as plt
 
-fig, axes = plt.subplots(1, 3, figsize=(15, 3.5))
-for ax, level in zip(axes, dt.children):
-    dt[level].air.isel(time=0).plot(ax=ax, vmin=230, vmax=305)
-show(fig)
+
+def plot(mode):
+    levels = ["0", str(len(dt.children) - 1)]  # finest and coarsest
+    fig, axes = plt.subplots(1, 2, figsize=(10, 3.5), layout="constrained")
+    for ax, level in zip(axes, levels):
+        im = dt[level].air.isel(time=0).plot(
+            ax=ax, vmin=230, vmax=305, cmap=f"warm_{mode}", add_colorbar=False
+        )
+        ax.set_title(f"level {level}")
+    fig.colorbar(im, ax=axes, label="air temperature [K]")
+    return fig
+
+
+show(plot)
 ```
 
 ```python exec="on" session="regrid"

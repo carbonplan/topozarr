@@ -1,0 +1,109 @@
+<svg role="img" aria-label="An 8×8-chunk level split into 4×4-chunk shards" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 330" width="720" height="330">
+<text x="24" y="28" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">one level, 8 × 8 chunks</text>
+<rect x="136" y="40" width="112" height="112" stroke="none" stroke-width="1" style="fill:var(--tz-fig-tint)">
+</rect>
+<rect x="220" y="68" width="28" height="28" stroke="none" stroke-width="1" style="fill:var(--cp-blue)">
+</rect>
+<line x1="52" y1="40" x2="52" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="24" y1="68" x2="248" y2="68" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="80" y1="40" x2="80" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="24" y1="96" x2="248" y2="96" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="108" y1="40" x2="108" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="24" y1="124" x2="248" y2="124" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="164" y1="40" x2="164" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="24" y1="180" x2="248" y2="180" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="192" y1="40" x2="192" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="24" y1="208" x2="248" y2="208" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="220" y1="40" x2="220" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="24" y1="236" x2="248" y2="236" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<rect x="220" y="68" width="28" height="28" fill="none" stroke-width="1" style="stroke:var(--tz-fig-fg)">
+</rect>
+<line x1="136" y1="40" x2="136" y2="264" stroke-width="1.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="24" y1="152" x2="248" y2="152" stroke-width="1.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<rect x="24" y="40" width="224" height="224" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<line x1="234" y1="82" x2="290" y2="82" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<circle cx="234" cy="82" r="2.5" style="fill:var(--cp-carbon)">
+</circle>
+<text x="300" y="78" font-family="Relative, sans-serif" font-size="14" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">chunk</text>
+<text x="300" y="96" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">read unit · 512 KiB</text>
+<text x="300" y="112" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">target_chunk_bytes</text>
+<line x1="248" y1="135.2" x2="290" y2="135.2" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<text x="300" y="147.2" font-family="Relative, sans-serif" font-size="14" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">shard</text>
+<text x="300" y="165.2" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">4 × 4 chunks · 8 MiB · write unit</text>
+<text x="300" y="196" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">chunks_per_shard (default 4)</text>
+<rect x="300" y="208" width="64" height="64" stroke="none" stroke-width="1" style="fill:var(--tz-fig-tint)">
+</rect>
+<rect x="300" y="208" width="64" height="64" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<text x="300" y="290" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">1 · 1 chunk</text>
+<text x="300" y="306" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">512 KiB</text>
+<rect x="410" y="208" width="64" height="64" stroke="none" stroke-width="1" style="fill:var(--tz-fig-tint)">
+</rect>
+<line x1="426" y1="208" x2="426" y2="272" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="410" y1="224" x2="474" y2="224" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="442" y1="208" x2="442" y2="272" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="410" y1="240" x2="474" y2="240" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="458" y1="208" x2="458" y2="272" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="410" y1="256" x2="474" y2="256" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<rect x="410" y="208" width="64" height="64" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<text x="410" y="290" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">4 · 16 chunks</text>
+<text x="410" y="306" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">8 MiB</text>
+<rect x="520" y="208" width="64" height="64" stroke="none" stroke-width="1" style="fill:var(--tz-fig-tint)">
+</rect>
+<line x1="528" y1="208" x2="528" y2="272" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="520" y1="216" x2="584" y2="216" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="536" y1="208" x2="536" y2="272" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="520" y1="224" x2="584" y2="224" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="544" y1="208" x2="544" y2="272" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="520" y1="232" x2="584" y2="232" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="552" y1="208" x2="552" y2="272" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="520" y1="240" x2="584" y2="240" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="560" y1="208" x2="560" y2="272" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="520" y1="248" x2="584" y2="248" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="568" y1="208" x2="568" y2="272" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="520" y1="256" x2="584" y2="256" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="576" y1="208" x2="576" y2="272" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="520" y1="264" x2="584" y2="264" stroke-width="0.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<rect x="520" y="208" width="64" height="64" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<text x="520" y="290" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">8 · 64 chunks</text>
+<text x="520" y="306" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">32 MiB</text>
+</svg>

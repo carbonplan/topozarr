@@ -99,11 +99,37 @@
   }
 }
 
-/* Header stays carbon in both modes so the logo blends in */
+/* Header follows the page, like carbonplan.org: carbon in dark mode, white in light. No shadow. */
 .md-header,
 .md-tabs {
   background-color: var(--cp-carbon);
   color: var(--cp-chalk);
+}
+
+.md-header--shadow {
+  box-shadow: none;
+}
+
+[data-md-color-scheme="default"] .md-header,
+[data-md-color-scheme="default"] .md-tabs {
+  --md-primary-bg-color: #1b1e23;
+  --md-primary-bg-color--light: rgba(27, 30, 35, 0.54);
+  background-color: #ffffff;
+  color: var(--cp-carbon);
+}
+
+[data-md-color-scheme="default"] .md-header__button.md-logo img {
+  content: url("../assets/topozarr-lockup-on-light.svg");
+}
+
+@media screen and (min-width: 60em) {
+  [data-md-color-scheme="default"] .md-header .md-search__form {
+    background-color: #f2f2f1;
+  }
+
+  [data-md-color-scheme="default"] .md-header .md-search__form:hover {
+    background-color: #e8e8e7;
+  }
 }
 
 /* Light mode: carbon on white, darker teal for contrast */
@@ -151,7 +177,7 @@
 
 .tz-hero {
   text-align: center;
-  padding: 2.5rem 0 1.5rem;
+  padding: 2.5rem 0 0.5rem;
 }
 
 .md-typeset .tz-lockup {
@@ -164,6 +190,12 @@
   letter-spacing: -0.015em;
   color: var(--md-default-fg-color--light);
   margin-top: 0.8rem;
+}
+
+.md-typeset .tz-subline {
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color--light);
+  margin-top: 0.4rem;
 }
 
 /* Active nav item in accent */
@@ -233,4 +265,143 @@
 .md-typeset table:not([class]) code {
   white-space: nowrap;
   word-break: normal;
+}
+
+/* Concept figures: inline SVGs (pymdownx.snippets) so Relative loads and colors follow the scheme.
+   Drawn at a fixed pixel size; shown at native size, scaled down only on narrow screens. */
+.md-typeset .tz-figure svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1.2rem auto;
+}
+
+/* Tints are --cp-* mixed into the figure bg (30% chip fill, 50% mid). Greys are darker than the theme's #808080 secondary, which is ~3.9:1 on white and fails WCAG AA at 12px */
+[data-md-color-scheme="default"] {
+  --tz-fig-fg: #1b1e23;
+  --tz-fig-secondary: #6a6c70;
+  --tz-fig-muted: #d4d5d8;
+  --tz-fig-tint: color-mix(in srgb, var(--cp-blue) 30%, var(--tz-fig-bg));
+  --tz-fig-bg: #ffffff;
+  --tz-fig-blue-mid: color-mix(in srgb, var(--cp-blue) 50%, var(--tz-fig-bg));
+  --tz-fig-green-tint: color-mix(in srgb, var(--cp-green) 30%, var(--tz-fig-bg));
+  --tz-fig-orange-tint: color-mix(in srgb, var(--cp-orange) 30%, var(--tz-fig-bg));
+  --tz-fig-orange-mid: color-mix(in srgb, var(--cp-orange) 50%, var(--tz-fig-bg));
+}
+
+[data-md-color-scheme="slate"] {
+  --tz-fig-fg: #ebebec;
+  --tz-fig-secondary: #94969a;
+  --tz-fig-muted: #3d4249;
+  --tz-fig-tint: color-mix(in srgb, var(--cp-blue) 30%, var(--tz-fig-bg));
+  --tz-fig-bg: #1b1e23;
+  --tz-fig-blue-mid: color-mix(in srgb, var(--cp-blue) 50%, var(--tz-fig-bg));
+  --tz-fig-green-tint: color-mix(in srgb, var(--cp-green) 30%, var(--tz-fig-bg));
+  --tz-fig-orange-tint: color-mix(in srgb, var(--cp-orange) 30%, var(--tz-fig-bg));
+  --tz-fig-orange-mid: color-mix(in srgb, var(--cp-orange) 50%, var(--tz-fig-bg));
+}
+
+/* xarray HTML repr (rendered in a shadow root): its own :root defaults don't reach it, so set both schemes here */
+[data-md-color-scheme="default"] {
+  --xr-font-color0: #1b1e23;
+  --xr-font-color2: rgba(27, 30, 35, 0.54);
+  --xr-font-color3: rgba(27, 30, 35, 0.38);
+  --xr-border-color: #e0e0e0;
+  --xr-disabled-color: #bdbdbd;
+  --xr-background-color: #ffffff;
+  --xr-background-color-row-even: #f4f4f5;
+  --xr-background-color-row-odd: #e8e8e9;
+}
+
+[data-md-color-scheme="slate"] {
+  --xr-font-color0: #ebebec;
+  --xr-font-color2: rgba(235, 235, 236, 0.54);
+  --xr-font-color3: rgba(235, 235, 236, 0.38);
+  --xr-border-color: #3a3f47;
+  --xr-disabled-color: #5a5f67;
+  --xr-background-color: #1b1e23;
+  --xr-background-color-row-even: #24282f;
+  --xr-background-color-row-odd: #2d3239;
+}
+
+/* Spec link under each conventions-page heading */
+.md-typeset .tz-spec {
+  font-size: 0.7rem;
+  color: var(--md-default-fg-color--light);
+  margin-top: -0.4rem;
+}
+
+/* Index conventions cards: compact, three across, top border matches the convention colors in the figures */
+@media screen and (min-width: 45em) {
+  .md-typeset .tz-conventions.grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.md-typeset .tz-conventions > ul > li {
+  padding: 0.6rem 0.8rem;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  border-top-width: 3px !important;
+}
+
+.md-typeset .tz-conventions > ul > li > p {
+  margin: 0;
+}
+
+/* Whole card is clickable: the title link stretches over the card */
+.md-typeset .tz-conventions > ul > li {
+  position: relative;
+}
+
+.md-typeset .tz-conventions > ul > li a::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+
+.md-typeset .tz-conventions > ul > li:nth-child(1) { border-top-color: var(--cp-blue) !important; }
+.md-typeset .tz-conventions > ul > li:nth-child(2) { border-top-color: var(--cp-green) !important; }
+.md-typeset .tz-conventions > ul > li:nth-child(3) { border-top-color: var(--cp-orange) !important; }
+
+/* Code highlighting in CarbonPlan colors */
+[data-md-color-scheme="slate"],
+[data-md-color-scheme="default"] {
+  --md-code-hl-keyword-color: #bc85d9;
+  --md-code-hl-string-color: var(--cp-green);
+  --md-code-hl-number-color: var(--cp-orange);
+  --md-code-hl-constant-color: var(--cp-blue);
+  --md-code-hl-function-color: var(--cp-teal);
+  --md-code-hl-operator-color: var(--cp-red);
+  --md-code-hl-special-color: #e587b6;
+  --md-code-hl-variable-color: #e587b6;
+  --md-code-hl-name-color: var(--md-code-fg-color);
+  --md-code-hl-punctuation-color: var(--md-default-fg-color--light);
+  --md-code-hl-comment-color: var(--md-default-fg-color--light);
+}
+
+[data-md-color-scheme="default"] {
+  --md-code-hl-function-color: var(--cp-teal-dark);
+}
+
+/* Material groups None/True/False with plain names */
+.md-typeset .highlight .kc {
+  color: var(--md-code-hl-number-color);
+}
+
+/* Sidebar: section headers as small muted labels, tighter link spacing */
+.md-nav--primary .md-nav__item--section > .md-nav__link {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--md-default-fg-color--light);
+}
+
+.md-nav--primary .md-nav__link {
+  margin-top: 0.4em;
+}
+
+.md-nav--primary .md-nav__item--section {
+  margin: 1.1em 0 0;
 }

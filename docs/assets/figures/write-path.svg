@@ -1,0 +1,104 @@
+<svg role="img" aria-label="Each worker writes a level-0 tile, block-reduces it, and writes levels 1 to k" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 290" width="800" height="290">
+<defs>
+<pattern id="wp-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+<line x1="0" y1="0" x2="0" y2="6" stroke-width="2" style="stroke:var(--tz-fig-muted)">
+</line>
+</pattern>
+</defs>
+<rect x="216" y="216" width="120" height="28" stroke="none" stroke-width="1" style="fill:var(--cp-blue)">
+</rect>
+<line x1="126" y1="216" x2="126" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="156" y1="216" x2="156" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="186" y1="216" x2="186" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="216" y1="216" x2="216" y2="244" stroke-width="1.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="246" y1="216" x2="246" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="276" y1="216" x2="276" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="306" y1="216" x2="306" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="336" y1="216" x2="336" y2="244" stroke-width="1.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="366" y1="216" x2="366" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="396" y1="216" x2="396" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="426" y1="216" x2="426" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="456" y1="216" x2="456" y2="244" stroke-width="1.6" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="486" y1="216" x2="486" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="516" y1="216" x2="516" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="546" y1="216" x2="546" y2="244" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<rect x="96" y="216" width="480" height="28" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<text x="84" y="234" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="end" style="fill:var(--tz-fig-fg)">0</text>
+<rect x="216" y="172" width="120" height="28" stroke="none" stroke-width="1" style="fill:var(--tz-fig-tint)">
+</rect>
+<line x1="156" y1="172" x2="156" y2="200" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="216" y1="172" x2="216" y2="200" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="276" y1="172" x2="276" y2="200" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="336" y1="172" x2="336" y2="200" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="396" y1="172" x2="396" y2="200" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="456" y1="172" x2="456" y2="200" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="516" y1="172" x2="516" y2="200" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<rect x="96" y="172" width="480" height="28" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<text x="84" y="190" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="end" style="fill:var(--tz-fig-fg)">1</text>
+<rect x="216" y="128" width="120" height="28" stroke="none" stroke-width="1" style="fill:var(--tz-fig-tint)">
+</rect>
+<line x1="216" y1="128" x2="216" y2="156" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="336" y1="128" x2="336" y2="156" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="456" y1="128" x2="456" y2="156" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<rect x="96" y="128" width="480" height="28" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<text x="84" y="146" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="end" style="fill:var(--tz-fig-fg)">2 = k</text>
+<rect x="96" y="84" width="480" height="28" fill="url(#wp-hatch)" stroke="none" stroke-width="1">
+</rect>
+<line x1="336" y1="84" x2="336" y2="112" stroke-width="0.8" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<rect x="96" y="84" width="480" height="28" fill="none" stroke-width="1.6" stroke-dasharray="4 3" style="stroke:var(--tz-fig-secondary)">
+</rect>
+<text x="84" y="102" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="end" style="fill:var(--tz-fig-secondary)">3</text>
+<rect x="96" y="40" width="480" height="28" fill="url(#wp-hatch)" stroke="none" stroke-width="1">
+</rect>
+<rect x="96" y="40" width="480" height="28" fill="none" stroke-width="1.6" stroke-dasharray="4 3" style="stroke:var(--tz-fig-secondary)">
+</rect>
+<text x="84" y="58" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="end" style="fill:var(--tz-fig-secondary)">4</text>
+<text x="84" y="24" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="end" style="fill:var(--tz-fig-secondary)">level</text>
+<line x1="276" y1="214" x2="276" y2="208" stroke-width="1.4" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<polygon points="276,202 279.6,208 272.4,208" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-fg)">
+</polygon>
+<line x1="276" y1="170" x2="276" y2="164" stroke-width="1.4" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<polygon points="276,158 279.6,164 272.4,164" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-fg)">
+</polygon>
+<text x="156" y="264" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">tile 1</text>
+<text x="276" y="264" font-family="Relative, sans-serif" font-size="12" text-anchor="middle" font-weight="500" style="fill:var(--tz-fig-fg)">tile 2</text>
+<text x="396" y="264" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">tile 3</text>
+<text x="516" y="264" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">tile 4</text>
+<text x="276" y="280" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">one worker</text>
+<text x="604" y="234" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">1  write tile to level 0</text>
+<text x="626" y="162" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">reduce, then write</text>
+<text x="604" y="146" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">2  each level 1..k:</text>
+<text x="604" y="102" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">above k: reduced from</text>
+<text x="604" y="118" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">the stored level below</text>
+</svg>

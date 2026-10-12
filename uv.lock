@@ -145,6 +145,14 @@ wheels = [
 ]
 
 [[package]]
+name = "carbonplan-styles"
+version = "0.6.0"
+source = { git = "https://github.com/carbonplan/styles?branch=modernize-uv#320ecc729590379a53ac81b052413e9d726e4b8f" }
+dependencies = [
+    { name = "matplotlib" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.5.20"
 source = { registry = "https://pypi.org/simple" }
@@ -2909,6 +2917,7 @@ conformance = [
     { name = "zarrs" },
 ]
 docs = [
+    { name = "carbonplan-styles" },
     { name = "dask" },
     { name = "icechunk" },
     { name = "markdown-exec" },
@@ -2981,6 +2990,7 @@ conformance = [
     { name = "zarrs", specifier = ">=0.2.3" },
 ]
 docs = [
+    { name = "carbonplan-styles", git = "https://github.com/carbonplan/styles?branch=modernize-uv" },
     { name = "dask", specifier = ">=2026.7.1" },
     { name = "icechunk", specifier = ">=2.0.6" },
     { name = "markdown-exec", specifier = ">=1.12.4" },

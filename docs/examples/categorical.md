@@ -1,14 +1,17 @@
 # Categorical data
 
-Averaging class codes invents classes: the mean of tree cover (`10`) and water (`80`) is `45`. For land cover, masks, and class IDs use `method="nearest"`, which keeps the top-left cell of each window.
+Land cover maps, masks, and other categorical data store class codes, not quantities, so averaging them invents classes that don't exist. For example, a window with one tree cover cell (`10`) and three water cells (`80`) averages to `62`, which isn't a class at all. For this kind of data, use `method="nearest"`, which keeps the top-left cell of each window.
 
-This page uses a window of an [ESA WorldCover](https://esa-worldcover.org) 2021 tile over Missoula, Montana, read lazily with [rioxarray](https://corteva.github.io/rioxarray/).
+<div class="tz-figure">
+--8<-- "docs/assets/figures/categorical.svg"
+</div>
+
+This example uses a small window of an [ESA WorldCover](https://esa-worldcover.org) 2021 tile over Missoula, Montana, read lazily with [rioxarray](https://corteva.github.io/rioxarray/). We build a pyramid with both `nearest` and `mean` and compare the results.
 
 ```python exec="on" session="categorical"
-# hidden: render matplotlib figures inline
-import base64
+# hidden: render CarbonPlan-themed light and dark figures inline
 import os
-from io import BytesIO
+import sys
 
 import matplotlib
 
@@ -18,13 +21,16 @@ os.environ.setdefault("GDAL_HTTP_MAX_RETRY", "5")
 os.environ.setdefault("GDAL_HTTP_RETRY_DELAY", "1")
 
 
-def show(fig):
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=100, bbox_inches="tight")
-    print(f'<img src="data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}">')
+sys.path.insert(0, "scripts")
+from docs_plot import html_repr, render  # noqa: E402
+
+
+# print here is markdown-exec's captured print, not the module's
+def show(plot):
+    print(render(plot))
 ```
 
-```python exec="on" source="above" session="categorical" result="text"
+```python exec="on" source="above" session="categorical" html="true"
 import rioxarray
 import xarray as xr
 import xproj  # noqa: F401
@@ -36,17 +42,18 @@ url = (
 landcover = (
     rioxarray.open_rasterio(url, chunks=True)
     .squeeze("band", drop=True)
-    .sel(x=slice(-114.2, -114.0), y=slice(46.97, 46.77))
+    .sel(x=slice(-114.12, -114.02), y=slice(46.92, 46.84))
 )
 # 0 is a WorldCover class, not missing data: drop the GDAL nodata tag
 landcover.attrs.pop("_FillValue")
 ds = landcover.to_dataset(name="landcover").proj.assign_crs(spatial_ref="EPSG:4326")
-print(ds)
+ds
+print(html_repr(ds))  # markdown-exec: hide
 ```
 
-Build a pyramid with each method and open the coarsest level (8x). `mask_and_scale=False` keeps class codes as `uint8`:
+Build a pyramid with each method and open the coarsest level (8x coarser than the source). `mask_and_scale=False` keeps the class codes as `uint8`:
 
-```python exec="on" source="above" session="categorical" result="text"
+```python exec="on" source="above" session="categorical" html="true"
 from topozarr import create_pyramid
 
 coarse = {}
@@ -56,10 +63,11 @@ for method in ["nearest", "mean"]:
     coarse[method] = dt["3"].landcover
 
 coarse = xr.concat(coarse.values(), dim=xr.Variable("method", list(coarse)))
-print(coarse)
+coarse
+print(html_repr(coarse))  # markdown-exec: hide
 ```
 
-`nearest` only returns real classes. `mean` keeps the dtype but fills class boundaries with codes that are not classes:
+`nearest` returns only real classes. `mean` keeps the dtype, but it fills the boundaries between classes with codes that aren't classes (red in the plot below):
 
 ```python exec="on" source="above" session="categorical" result="text"
 classes = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100]
@@ -67,17 +75,29 @@ print((~coarse.isin(classes)).mean(["x", "y"]).to_series())
 ```
 
 ```python exec="on" source="above" session="categorical" html="true"
+import carbonplan_styles as cps
 from matplotlib.colors import BoundaryNorm, ListedColormap
 
-colors = ["#000000", "#006400", "#ffbb22", "#ffff4c", "#f096ff", "#fa0000",
-          "#b4b4b4", "#f0f0f0", "#0064c8", "#0096a0", "#00cf75", "#fae6a0"]
-norm = BoundaryNorm([c - 0.5 for c in classes] + [100.5], len(colors))
+# one CarbonPlan color per class in `classes`; red marks codes that are not classes
+c = cps.colors.light
+colors = [c["secondary"], c["green"], c["orange"], c["yellow"], c["pink"], c["purple"],
+          c["grey"], cps.colors.dark["text"], c["blue"], c["teal"], c["teal"], c["grey"], c["red"]]
+norm = BoundaryNorm([c - 0.5 for c in classes] + [100.5, 255.5], len(colors))
+shown = coarse.where(coarse.isin(classes), 255)
 
-grid = coarse.plot.imshow(col="method", cmap=ListedColormap(colors), norm=norm, size=5, add_colorbar=False)
-show(grid.fig)
+
+def plot(mode):
+    grid = shown.plot.imshow(col="method", cmap=ListedColormap(colors), norm=norm, size=5, add_colorbar=False)
+    for ax in grid.axs.flat:
+        ax.locator_params(nbins=3)
+        ax.ticklabel_format(useOffset=False)
+    return grid.fig
+
+
+show(plot)
 ```
 
-The trade-off: `nearest` samples one cell per window, so a rare class that never lands on a window corner can shrink or vanish at coarse zoom.
+There is a trade-off. `nearest` samples one cell per window, so a rare class that seldom lands on a window's corner can shrink or disappear at coarser levels.
 
 ```python exec="on" session="categorical"
 # hidden: remove the stores this page wrote

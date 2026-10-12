@@ -6,15 +6,15 @@
 </p>
 
 
-### Create Multiscale Zarr stores
+### Create multiscale Zarr stores for web maps
 
-Python library companion to the TypeScript web mapping tool [zarr-layer](https://zarr-layer.demo.carbonplan.org/). Use it to create GeoZarr-compliant multiscales / pyramids / overviews for Zarr stores for use with web mapping.
+`topozarr` is a Python library that turns an Xarray dataset into a multiscale Zarr store: a pyramid of progressively coarser copies of the data, so a web map can load only the resolution it needs. It is the companion to [`zarr-layer`](https://zarr-layer.demo.carbonplan.org/), our TypeScript library for rendering Zarr on MapLibre and Mapbox maps.
 
-Follows the [zarr-conventions](https://github.com/zarr-conventions):
+Stores follow three [Zarr conventions](https://github.com/zarr-conventions) that make up GeoZarr:
 
-- [multiscales](https://github.com/zarr-conventions/multiscales) — pyramid structure and resolution levels
-- [proj:](https://github.com/zarr-conventions/proj) — coordinate reference system (CRS)
-- [spatial:](https://github.com/zarr-conventions/spatial) — affine transform, bounding box, and dimension names
+- [multiscales](https://github.com/zarr-conventions/multiscales): pyramid structure and resolution levels
+- [proj:](https://github.com/zarr-conventions/proj): coordinate reference system (CRS)
+- [spatial:](https://github.com/zarr-conventions/spatial): affine transform, bounding box, and dimension names
 
 
 ### Installation
@@ -55,9 +55,9 @@ pyramid = create_pyramid(
 pyramid.write("pyramid.zarr")
 ```
 
-`create_pyramid` is lazy; `write` does the work. `levels` counts all levels: `0` is the original resolution and each level after it is 2x coarser (see [Tuning](https://carbonplan.github.io/topozarr/tuning/) for `levels="auto"`).
+`create_pyramid` is lazy: it builds a plan, and `write` does the work. `levels` is the total number of levels. Level `0` is the original resolution, and each level after it is 2x coarser. To let `topozarr` pick the count, see `levels="auto"` in [Tuning](https://carbonplan.github.io/topozarr/tuning/).
 
-Small datasets may not need overviews. Write a single-resolution store with GeoZarr attrs and web-friendly chunks:
+Small datasets may not need a pyramid at all. In that case, write a single-resolution store with GeoZarr attributes and web-friendly chunks:
 
 ```python
 from topozarr import attach_geozarr_metadata, recommend_encoding
@@ -73,17 +73,17 @@ ds.to_zarr(
 
 ### More
 
-The [docs](https://carbonplan.github.io/topozarr/usage/) have runnable examples for categorical data, regridding, tuning, Icechunk, and Dask. Coming from [ndpyramid](https://github.com/carbonplan/ndpyramid)? See the [comparison](https://carbonplan.github.io/topozarr/tips/#coming-from-ndpyramid).
+The [documentation](https://carbonplan.github.io/topozarr/usage/) has runnable examples for categorical data, regridding, tuning, Icechunk, and Dask. If you're coming from [`ndpyramid`](https://github.com/carbonplan/ndpyramid), see the [comparison](https://carbonplan.github.io/topozarr/tips/#coming-from-ndpyramid).
 
 
 ## Contributing
 
-Building from source requires a [Rust toolchain](https://rustup.rs) for the `topozarr-core` kernel. See the [contributing docs](https://carbonplan.github.io/topozarr/contributing/) for setup, tests, conformance tests, linting, and demo-data scripts.
+Building from source requires a [Rust toolchain](https://rustup.rs) for the `topozarr-core` kernel. See the [contributing guide](https://carbonplan.github.io/topozarr/contributing/) for setup, tests, linting, and demo data scripts.
 
 ## License
 
-MIT — see the [LICENSE](LICENSE) file for details.
+MIT. See the [LICENSE](LICENSE) file for details.
 
-## About Us
+## About us
 
-CarbonPlan is a nonprofit organization that uses data and science for climate action. We aim to improve the transparency and scientific integrity of climate solutions through open data and tools. Find out more at [carbonplan.org](https://carbonplan.org/) or get in touch by [opening an issue](https://github.com/carbonplan/topozarr/issues/new) or [sending us an email](mailto:hello@carbonplan.org)
+CarbonPlan is a nonprofit organization that uses data and science for climate action. We aim to improve the transparency and scientific integrity of climate solutions through open data and tools. Find out more at [carbonplan.org](https://carbonplan.org/) or get in touch by [opening an issue](https://github.com/carbonplan/topozarr/issues/new) or [sending us an email](mailto:hello@carbonplan.org).

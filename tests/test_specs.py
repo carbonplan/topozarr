@@ -25,7 +25,7 @@ def test_translation_offsets(create_dataset):
     layout = pyramid.attrs["multiscales"]["layout"]
 
     assert "transform" not in layout[0]
-    assert layout[1]["transform"]["translation"] == [0.5, 0.5]
+    assert layout[1]["transform"]["translation"] == [0.0, 0.0]
 
 
 @pytest.mark.parametrize("y_descending", [False, True])
@@ -104,8 +104,8 @@ def test_transform_dims(create_dataset):
     dim_map = dict(zip(ds.dims, zip(l1["scale"], l1["translation"])))
 
     assert dim_map["time"] == (1.0, 0.0)
-    assert dim_map["x"] == (2.0, 0.5)
-    assert dim_map["y"] == (2.0, 0.5)
+    assert dim_map["x"] == (2.0, 0.0)
+    assert dim_map["y"] == (2.0, 0.0)
     assert len(l1["scale"]) == len(ds.dims)
 
 

@@ -1,45 +1,48 @@
-# Tips & caveats
+# Tips and caveats
+
+This page collects input requirements, performance settings, and a few problems you may run into on large or remote writes.
 
 ## Input requirements
 
-`create_pyramid` validates these when the plan is built, so a bad input should fail
+`create_pyramid` checks these when it builds the plan, so a bad input should fail
 before anything is written:
 
 - **`method`** must be one of `mean`, `max`, `min`, `sum`, `nearest`.
 - **Spatial coordinates must be 1-D** and uniformly spaced. Curvilinear grids
-  (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected.
-- **Spatial variables** are limited to 4 dimensions.
+  (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected, because each level is described
+  by [one affine transform](geozarr.md#spatial).
+- **Spatial variables** can have at most four dimensions.
 - **Packed integers** (`scale_factor` / `add_offset`) stay packed in the output.
 
-Need a different grid? Reproject or regrid upstream, then hand the result to `create_pyramid` (see the [regridding example](examples/regrid.md)).
+If you need a different grid, reproject or regrid first, then pass the result to `create_pyramid` (see the [regridding example](examples/regrid.md)).
 
 ??? note "Packed and masked integer details"
 
     Packed input is written packed whether it was opened decoded or with
     `mask_and_scale=False`; decoded input is re-packed to its stored dtype.
     Packed input without a `_FillValue`, `_Unsigned` variables, and masked-only
-    integers (e.g. WorldCover `uint8`) stay float; open them with
+    integers (for example, WorldCover `uint8`) are written as floats. Open them with
     `mask_and_scale=False` to keep the integer dtype.
 
 ## Progress and memory
 
-Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written regions (requires `tqdm` to be installed):
+Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) progress bar as regions are written (requires `tqdm`):
 
 ```python
 pyramid.write("pyramid.zarr", progress=True)
 ```
 
-The thread pool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 tiles; peak memory is roughly `max_workers * 5 * max_region_bytes`.
+`write` sizes its thread pool from the CPU count and available memory. Pass `max_workers` to override it. To shrink the level `0` tiles, lower `max_region_bytes` (default 256 MB). Peak memory is roughly `max_workers * 5 * max_region_bytes`.
 
 See [How it works](design.md#write-path) for how tiles are chosen.
 
 ## Dask distributed
 
-`Pyramid.write` uses a local thread pool, not Dask. For Dask-distributed writes, use `pyramid.as_datatree()` and pass `pyramid.encoding` to `to_zarr` (see the [Dask example](examples/icechunk-dask.md#write-with-dask)). If `to_zarr` raises on `safe_chunks`, pass `align_chunks=True`.
+`Pyramid.write` uses a local thread pool, not Dask. To write with a Dask cluster, call `pyramid.as_datatree()` and pass `pyramid.encoding` to `to_zarr` (see the [Dask example](examples/icechunk-dask.md#write-with-dask)). If `to_zarr` raises a `safe_chunks` error, pass `align_chunks=True`.
 
 ## Faster local writes
 
-With the `zarrs` extra installed, `write` uses the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline automatically for local stores. Remote stores keep zarr-python's pipeline until [zarrs-python#139](https://github.com/zarrs/zarrs-python/issues/139) lands. To opt in anyway, set it yourself; `write` leaves an explicitly configured pipeline alone:
+With the `zarrs` extra installed, `write` automatically uses the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline for local stores. Remote stores keep the zarr-python pipeline until [zarrs-python#139](https://github.com/zarrs/zarrs-python/issues/139) is resolved. To use `zarrs` for remote stores anyway, set it yourself. `write` leaves an explicitly configured pipeline alone:
 
 ```python
 import zarr
@@ -50,7 +53,7 @@ zarr.config.set({"codec_pipeline.path": "zarrs.ZarrsCodecPipeline"})
 
 ## Obstore timeouts
 
-`obstore`'s defaults (5s connect / 30s total) can time out under heavy concurrency, surfacing as `GenericError` with `"Connect, TimedOut"`. Raise them via `client_options`, and consider raising `zarr.config`'s `async.concurrency` for higher S3 throughput:
+The default `obstore` timeouts (5 s to connect, 30 s total) can expire under heavy concurrency. The error shows up as a `GenericError` containing `"Connect, TimedOut"`. Raise the timeouts with `client_options`. For higher S3 throughput, you can also raise `async.concurrency` in `zarr.config`:
 
 ```python
 store = ObjectStore(
@@ -63,14 +66,14 @@ store = ObjectStore(
 zarr.config.set({"async.concurrency": 128})
 ```
 
-If connect timeouts persist on large instances, try reducing `async.concurrency` or passing a smaller `max_workers`.
+If connect timeouts continue on large instances, try lowering `async.concurrency` or passing a smaller `max_workers`.
 
 ## Coming from ndpyramid
 
-[ndpyramid](https://github.com/carbonplan/ndpyramid) was built for [carbonplan-maps](https://github.com/carbonplan/maps), which requires EPSG:3857, square, slippy-map-tile-compliant shapes. [zarr-layer](https://zarr-layer.demo.carbonplan.org/) relaxes these requirements, so topozarr only coarsens and writes metadata.
+We built [`ndpyramid`](https://github.com/carbonplan/ndpyramid) for [`@carbonplan/maps`](https://github.com/carbonplan/maps), which requires data in Web Mercator (EPSG:3857) with square chunks that match slippy map tiles. [`zarr-layer`](https://zarr-layer.demo.carbonplan.org/) drops these requirements, so `topozarr` only coarsens the data and writes metadata.
 
 | ndpyramid | topozarr |
 | --- | --- |
 | `pyramid_coarsen` | `create_pyramid(ds, levels=...)` |
-| `pyramid_reproject` | no equivalent — reproject upstream, then `create_pyramid` |
-| `pyramid_regrid` | no equivalent — regrid upstream, then `create_pyramid` |
+| `pyramid_reproject` | No equivalent. Reproject first, then call `create_pyramid` |
+| `pyramid_regrid` | No equivalent. Regrid first, then call `create_pyramid` |

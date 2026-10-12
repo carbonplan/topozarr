@@ -1,0 +1,53 @@
+<svg role="img" aria-label="A 5×5 grid coarsened by 2 drops the trailing row and column" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 240" width="420" height="240">
+<defs>
+<pattern id="tr-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+<line x1="0" y1="0" x2="0" y2="6" stroke-width="2" style="stroke:var(--cp-orange)">
+</line>
+</pattern>
+</defs>
+<text x="24" y="28" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">5 × 5</text>
+<rect x="152" y="40" width="32" height="160" fill="url(#tr-hatch)" stroke="none" stroke-width="1">
+</rect>
+<rect x="24" y="168" width="128" height="32" fill="url(#tr-hatch)" stroke="none" stroke-width="1">
+</rect>
+<line x1="56" y1="40" x2="56" y2="200" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="24" y1="72" x2="184" y2="72" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="88" y1="40" x2="88" y2="200" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="24" y1="104" x2="184" y2="104" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="120" y1="40" x2="120" y2="200" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="24" y1="136" x2="184" y2="136" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="152" y1="40" x2="152" y2="200" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="24" y1="168" x2="184" y2="168" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<rect x="24" y="40" width="64" height="64" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<rect x="88" y="40" width="64" height="64" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<rect x="24" y="104" width="64" height="64" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<rect x="88" y="104" width="64" height="64" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<rect x="24" y="40" width="160" height="160" fill="none" stroke-width="1" stroke-dasharray="4 3" style="stroke:var(--tz-fig-secondary)">
+</rect>
+<text x="24" y="222" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">hatched cells are dropped</text>
+<line x1="200" y1="104" x2="237" y2="104" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="244,104 237,108.2 237,99.8" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-secondary)">
+</polygon>
+<text x="260" y="28" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">2 × 2</text>
+<rect x="260" y="40" width="64" height="64" stroke-width="1.6" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<rect x="324" y="40" width="64" height="64" stroke-width="1.6" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<rect x="260" y="104" width="64" height="64" stroke-width="1.6" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<rect x="324" y="104" width="64" height="64" stroke-width="1.6" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+</svg>

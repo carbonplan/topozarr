@@ -61,6 +61,7 @@ conformance = [
     {include-group = "test"},
 ]
 docs = [
+    "carbonplan-styles>=0.6",
     "dask>=2026.7.1",
     "icechunk>=2.0.6",
     "markdown-exec>=1.12.4",
@@ -88,6 +89,8 @@ markers = [
 
 [tool.uv.sources]
 topozarr-core = { workspace = true }
+# carbonplan/styles#92 (0.6) branch; switch to a PyPI pin once it merges and releases
+carbonplan-styles = { git = "https://github.com/carbonplan/styles", branch = "modernize-uv" }
 
 [tool.uv.workspace]
 members = ["core"]

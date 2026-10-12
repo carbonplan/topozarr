@@ -1,0 +1,102 @@
+<svg role="img" aria-label="At coarse levels shards extend along time while chunks stay one timestep" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 330" width="720" height="330">
+<text x="24" y="28" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">same shard budget, spent where there is room</text>
+<polygon points="170,92 280.85,156 170,220 59.15,156" stroke-width="1.6" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="142.29,140 170,156 142.29,172 114.57,156" stroke-width="1" stroke-linejoin="round" style="fill:var(--cp-blue);stroke:var(--tz-fig-fg)">
+</polygon>
+<line x1="197.71" y1="108" x2="86.86" y2="172" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="142.29" y1="108" x2="253.14" y2="172" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="225.43" y1="124" x2="114.57" y2="188" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="114.57" y1="124" x2="225.43" y2="188" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="253.14" y1="140" x2="142.29" y2="204" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="86.86" y1="140" x2="197.71" y2="204" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<polygon points="170,92 280.85,156 170,220 59.15,156" fill="none" stroke-width="1.6" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<text x="170" y="262" font-family="Relative, sans-serif" font-size="14" text-anchor="middle" font-weight="500" style="fill:var(--tz-fig-fg)">level 0</text>
+<text x="170" y="280" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">4 × 4 chunks × 1 timestep</text>
+<polygon points="520,196 575.43,228 520,260 464.57,228" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,196 575.43,228 520,260 464.57,228" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,188 575.43,220 520,252 464.57,220" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,188 575.43,220 520,252 464.57,220" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,180 575.43,212 520,244 464.57,212" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,180 575.43,212 520,244 464.57,212" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,172 575.43,204 520,236 464.57,204" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,172 575.43,204 520,236 464.57,204" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,164 575.43,196 520,228 464.57,196" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,164 575.43,196 520,228 464.57,196" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,156 575.43,188 520,220 464.57,188" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,156 575.43,188 520,220 464.57,188" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,148 575.43,180 520,212 464.57,180" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,148 575.43,180 520,212 464.57,180" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,140 575.43,172 520,204 464.57,172" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,140 575.43,172 520,204 464.57,172" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,132 575.43,164 520,196 464.57,164" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,132 575.43,164 520,196 464.57,164" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,124 575.43,156 520,188 464.57,156" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,124 575.43,156 520,188 464.57,156" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,116 575.43,148 520,180 464.57,148" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,116 575.43,148 520,180 464.57,148" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,108 575.43,140 520,172 464.57,140" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,108 575.43,140 520,172 464.57,140" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,100 575.43,132 520,164 464.57,132" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,100 575.43,132 520,164 464.57,132" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,92 575.43,124 520,156 464.57,124" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,92 575.43,124 520,156 464.57,124" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,84 575.43,116 520,148 464.57,116" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,84 575.43,116 520,148 464.57,116" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,76 575.43,108 520,140 464.57,108" stroke-width="1.2" stroke-linejoin="round" style="fill:var(--cp-blue);stroke:var(--tz-fig-fg)">
+</polygon>
+<polygon points="520,76 575.43,108 520,140 464.57,108" fill="none" stroke-width="1.2" stroke-linejoin="round" style="stroke:var(--tz-fig-fg)">
+</polygon>
+<line x1="438" y1="250" x2="438" y2="103" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="438,96 442.2,103 433.8,103" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-secondary)">
+</polygon>
+<text x="438" y="86" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">time</text>
+<line x1="589.43" y1="108" x2="589.43" y2="228" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<line x1="583.43" y1="108" x2="589.43" y2="108" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<line x1="583.43" y1="228" x2="589.43" y2="228" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<text x="597.43" y="172" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">1 shard</text>
+<text x="520" y="284" font-family="Relative, sans-serif" font-size="14" text-anchor="middle" font-weight="500" style="fill:var(--tz-fig-fg)">coarse level</text>
+<text x="520" y="302" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">1 chunk × 16 timesteps</text>
+<text x="520" y="318" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">a read still fetches one timestep</text>
+</svg>

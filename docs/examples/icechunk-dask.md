@@ -1,12 +1,20 @@
 # Icechunk and Dask
 
-Write a packed, Dask-backed source to an [Icechunk](https://icechunk.io) repo, then write the same pyramid with Dask. For S3, swap the storage (see [Usage](../usage.md#writing-to-the-cloud)).
+This example starts from a packed, Dask-backed source and writes a pyramid two ways: to an [Icechunk](https://icechunk.io) repository with `write`, and with Dask. It writes to local disk. To write to S3 instead, swap the storage (see [Usage](../usage.md#choosing-a-store)).
 
 ## A packed source
 
-`air_temperature` is stored as `int16` with a `scale_factor`; opening it decodes to `float64`, 4x the size. Write it to Zarr packed, with a `_FillValue` and one chunk per year, then open it lazily:
+```python exec="on" session="icechunk"
+# hidden: xarray's HTML repr for displayed objects
+import sys
 
-```python exec="on" source="above" session="icechunk" result="text"
+sys.path.insert(0, "scripts")
+from docs_plot import html_repr  # noqa: E402
+```
+
+`air_temperature` is stored as `int16` with a `scale_factor`. Opening it decodes the values to `float64`, which is four times the size. Write it to Zarr in its packed form, with a `_FillValue` and one chunk per year, then open it lazily:
+
+```python exec="on" source="above" session="icechunk" html="true"
 import xarray as xr
 import xproj  # noqa: F401
 
@@ -19,12 +27,13 @@ xr.tutorial.open_dataset("air_temperature").chunk(time=730).to_zarr(
 )
 
 ds = xr.open_zarr("air.zarr", consolidated=False).proj.assign_crs(spatial_ref="EPSG:4326")
-print(ds.air)
+ds.air
+print(html_repr(ds.air))  # markdown-exec: hide
 ```
 
 `create_pyramid` re-packs decoded input to its stored dtype, so every level stays `int16`:
 
-```python exec="on" source="above" session="icechunk" result="text"
+```python exec="on" source="above" session="icechunk" result="python"
 from topozarr import create_pyramid
 
 pyramid = create_pyramid(ds, levels=2, x_dim="lon", y_dim="lat")
@@ -33,9 +42,9 @@ print(pyramid.level_templates[1].air.dtype, pyramid.level_templates[1].air.attrs
 
 ## Write to Icechunk
 
-`write` takes an Icechunk session store; commit afterwards:
+`write` accepts an Icechunk session store. Commit the session afterward:
 
-```python exec="on" source="above" session="icechunk" result="text"
+```python exec="on" source="above" session="icechunk" result="python"
 import icechunk
 
 repo = icechunk.Repository.open_or_create(icechunk.local_filesystem_storage("air.icechunk"))
@@ -49,12 +58,13 @@ print(dt["1"].air.encoding["dtype"], dt["1"].air.encoding["shards"])
 
 ## Write with Dask
 
-`Pyramid.write` runs on a local thread pool. For Dask (e.g. a distributed cluster), `as_datatree()` returns a lazy DataTree; pass `pyramid.encoding` to keep the recommended chunks and shards. The shards are sized to divide the Dask chunks, so no rechunk is needed:
+`Pyramid.write` runs on a local thread pool. To use Dask instead (for example, on a distributed cluster), call `as_datatree()` to get a lazy DataTree, and pass `pyramid.encoding` to `to_zarr` to keep the recommended chunks and shards. The shards are sized to divide evenly into the Dask chunks, so no rechunking is needed:
 
-```python exec="on" source="above" session="icechunk" result="text"
+```python exec="on" source="above" session="icechunk" html="true"
 lazy = pyramid.as_datatree()
 lazy.to_zarr("air-dask.zarr", zarr_format=3, consolidated=False, mode="w", encoding=pyramid.encoding)
-print(lazy)
+lazy
+print(html_repr(lazy))  # markdown-exec: hide
 ```
 
 ```python exec="on" session="icechunk"
