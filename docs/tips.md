@@ -1,24 +1,5 @@
 # Tips & caveats
 
-## Input requirements
-
-`create_pyramid` validates these when the plan is built, so a bad input should fail
-before anything is written:
-
-- **`method`** must be one of `mean`, `max`, `min`, `sum`, `nearest` — checked
-  against `topozarr_core.METHODS`.
-- **Spatial coordinates must be 1-D** and uniformly spaced. Curvilinear grids
-  (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected.
-- **Spatial variables** are limited to 4 dimensions.
-- **Packed integers** (`scale_factor` / `add_offset`, e.g. Sentinel-2 `uint16`)
-  are written packed whether the source was opened decoded or with
-  `mask_and_scale=False`. Decoded input is re-packed to its stored dtype.
-  Packed input without a `_FillValue`, `_Unsigned` variables, and masked-only
-  integers (e.g. WorldCover `uint8`) stay float; open them with
-  `mask_and_scale=False` to keep the integer dtype.
-
-Need a different grid? Reproject or regrid upstream, then hand the result to `create_pyramid`.
-
 ## Faster local writes
 
 With the `zarrs` extra installed, `write` uses the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline automatically for local stores. Remote stores keep zarr-python's pipeline until [zarrs-python#139](https://github.com/zarrs/zarrs-python/issues/139) lands. To opt in anyway, set it yourself; `write` leaves an explicitly configured pipeline alone:
@@ -40,7 +21,39 @@ pyramid.write("pyramid.zarr", progress=True)
 
 The thread pool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 tiles; peak memory is roughly `max_workers * 5 * max_region_bytes`.
 
-`write` reads the source once, in level-0 tiles that cover whole shards of the finer levels, and writes each tile to every level it covers. Memory stays bounded by the tile size, not the raster size.
+See [How it works](design.md#write-path) for how tiles are chosen.
+
+## Input requirements
+
+`create_pyramid` validates these when the plan is built, so a bad input should fail
+before anything is written:
+
+- **`method`** must be one of `mean`, `max`, `min`, `sum`, `nearest`.
+- **Spatial coordinates must be 1-D** and uniformly spaced. Curvilinear grids
+  (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected.
+- **Spatial variables** are limited to 4 dimensions.
+- **Packed integers** (`scale_factor` / `add_offset`) stay packed in the output.
+
+Need a different grid? Reproject or regrid upstream, then hand the result to `create_pyramid` (see the [regridding example](examples/regrid.md)).
+
+??? note "Packed and masked integer details"
+
+    Packed input is written packed whether it was opened decoded or with
+    `mask_and_scale=False`; decoded input is re-packed to its stored dtype.
+    Packed input without a `_FillValue`, `_Unsigned` variables, and masked-only
+    integers (e.g. WorldCover `uint8`) stay float; open them with
+    `mask_and_scale=False` to keep the integer dtype.
+
+## Dask distributed
+
+`Pyramid.write` does not use Dask — it streams regions through a local thread pool. For Dask-distributed writes, use `as_datatree()`, which returns a lazy `xr.DataTree` with all levels coarsened via `xarray.coarsen`. Pass `pyramid.encoding` to `to_zarr` to keep the recommended chunking and sharding:
+
+```python
+dt = pyramid.as_datatree()
+dt.to_zarr("pyramid.zarr", zarr_format=3, consolidated=False, encoding=pyramid.encoding)
+```
+
+The recommended shards are sized to divide the Dask chunks. If `to_zarr` still raises on `safe_chunks` (e.g. spatial Dask chunks smaller than the array's single chunk), pass `align_chunks=True`. See the [Dask example](examples/icechunk-dask.md#write-with-dask).
 
 ## Obstore timeouts
 
@@ -58,17 +71,6 @@ zarr.config.set({"async.concurrency": 128})
 ```
 
 If connect timeouts persist on large instances, try reducing `async.concurrency` or passing a smaller `max_workers`.
-
-## Dask distributed
-
-`Pyramid.write` does not use Dask — it streams regions through a local thread pool. For Dask-distributed writes, use `as_datatree()`, which returns a lazy `xr.DataTree` with all levels coarsened via `xarray.coarsen`. Pass `pyramid.encoding` to `to_zarr` to keep the recommended chunking and sharding:
-
-```python
-dt = pyramid.as_datatree()
-dt.to_zarr("pyramid.zarr", zarr_format=3, consolidated=False, encoding=pyramid.encoding)
-```
-
-The recommended shards are snapped to divide the Dask chunks, so no rechunk is needed. See the [Dask example](examples/icechunk-dask.md#write-with-dask).
 
 ## Coming from ndpyramid
 

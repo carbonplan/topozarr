@@ -1,16 +1,16 @@
 # Icechunk, Dask, and packed integers
 
-A Dask-backed, packed-integer source written to an [Icechunk](https://icechunk.io) repository, then the same pyramid written with Dask via `as_datatree`. Everything runs locally; for S3, swap the storage (see [Usage](../usage.md#writing-backends)).
+A Dask-backed, packed-integer source written to an [Icechunk](https://icechunk.io) repository, then the same pyramid written with Dask via `as_datatree`. Everything runs locally; for S3, swap the storage (see [Usage](../usage.md#writing-to-the-cloud)).
 
 ## A packed source
 
-`air_temperature` is stored as `int16` with a `scale_factor`; opening it decodes to `float64`, 4x the size. Write it to Zarr packed, with a `_FillValue`, then open it lazily:
+`air_temperature` is stored as `int16` with a `scale_factor`; opening it decodes to `float64`, 4x the size. Write it to Zarr packed, with a `_FillValue` and one chunk per year, then open it lazily:
 
 ```python exec="on" source="above" session="icechunk" result="text"
 import xarray as xr
 import xproj  # noqa: F401
 
-xr.tutorial.open_dataset("air_temperature").to_zarr(
+xr.tutorial.open_dataset("air_temperature").chunk(time=730).to_zarr(
     "air.zarr",
     zarr_format=3,
     consolidated=False,

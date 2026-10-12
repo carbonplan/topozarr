@@ -9,9 +9,14 @@ This page uses a window of an [ESA WorldCover](https://esa-worldcover.org) 2021 
 import base64
 from io import BytesIO
 
+import os
+
 import matplotlib
 
 matplotlib.use("Agg")
+# retry the remote GeoTIFF read on transient network errors
+os.environ.setdefault("GDAL_HTTP_MAX_RETRY", "5")
+os.environ.setdefault("GDAL_HTTP_RETRY_DELAY", "1")
 
 
 def show(fig):

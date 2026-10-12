@@ -94,7 +94,7 @@ ds.to_zarr(
 
 ### More
 
-[Runnable examples](https://carbonplan.github.io/topozarr/examples/quickstart/) cover categorical data, tuning, Icechunk, and Dask. Coming from [ndpyramid](https://github.com/carbonplan/ndpyramid)? See the [comparison](https://carbonplan.github.io/topozarr/tips/#coming-from-ndpyramid).
+The [docs](https://carbonplan.github.io/topozarr/usage/) have runnable examples for categorical data, regridding, tuning, Icechunk, and Dask. Coming from [ndpyramid](https://github.com/carbonplan/ndpyramid)? See the [comparison](https://carbonplan.github.io/topozarr/tips/#coming-from-ndpyramid).
 
 
 ## Contributing
