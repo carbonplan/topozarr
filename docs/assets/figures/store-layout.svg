@@ -1,0 +1,73 @@
+<svg role="img" aria-label="Root group holds the multiscales, proj and spatial attrs; each level group repeats proj:code" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 296" width="720" height="296">
+<line x1="32" y1="52" x2="32" y2="248" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="32" y1="108" x2="42" y2="108" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="32" y1="176" x2="42" y2="176" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="32" y1="244" x2="42" y2="244" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="56" y1="116" x2="56" y2="138" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="56" y1="138" x2="66" y2="138" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="56" y1="184" x2="56" y2="206" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="56" y1="206" x2="66" y2="206" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="56" y1="252" x2="56" y2="274" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="56" y1="274" x2="66" y2="274" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<text x="24" y="44" font-family="Relative, sans-serif" font-size="13" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">pyramid.zarr/</text>
+<text x="135.4" y="44" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">group</text>
+<text x="48" y="112" font-family="Relative, sans-serif" font-size="13" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">0/</text>
+<text x="73.6" y="112" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">level group</text>
+<text x="72" y="142" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="start" style="fill:var(--tz-fig-fg)">air</text>
+<text x="105.4" y="142" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">array</text>
+<text x="48" y="180" font-family="Relative, sans-serif" font-size="13" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">1/</text>
+<text x="73.6" y="180" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">level group</text>
+<text x="72" y="210" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="start" style="fill:var(--tz-fig-fg)">air</text>
+<text x="105.4" y="210" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">array</text>
+<text x="48" y="248" font-family="Relative, sans-serif" font-size="13" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">2/</text>
+<text x="73.6" y="248" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">level group</text>
+<text x="72" y="278" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="start" style="fill:var(--tz-fig-fg)">air</text>
+<text x="105.4" y="278" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">array</text>
+<rect x="260" y="30" width="129.2" height="20" stroke="none" stroke-width="1" rx="5" style="fill:var(--tz-fig-muted)">
+</rect>
+<text x="267" y="44" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">zarr_conventions</text>
+<rect x="397.2" y="30" width="93.2" height="20" stroke-width="1" rx="5" style="fill:var(--tz-fig-tint);stroke:var(--cp-blue)">
+</rect>
+<text x="404.2" y="44" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">multiscales</text>
+<rect x="260" y="56" width="78.8" height="20" stroke-width="1" rx="5" style="fill:var(--tz-fig-green-tint);stroke:var(--cp-green)">
+</rect>
+<text x="267" y="70" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">proj:code</text>
+<rect x="346.8" y="56" width="143.6" height="20" stroke-width="1" rx="5" style="fill:var(--tz-fig-orange-tint);stroke:var(--cp-orange)">
+</rect>
+<text x="353.8" y="70" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">spatial:dimensions</text>
+<rect x="498.4" y="56" width="100.4" height="20" stroke-width="1" rx="5" style="fill:var(--tz-fig-orange-tint);stroke:var(--cp-orange)">
+</rect>
+<text x="505.4" y="70" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">spatial:bbox</text>
+<rect x="260" y="97" width="78.8" height="20" stroke-width="1" rx="5" style="fill:var(--tz-fig-green-tint);stroke:var(--cp-green)">
+</rect>
+<text x="267" y="111" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">proj:code</text>
+<text x="350" y="111" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">repeated per level</text>
+<rect x="260" y="165" width="78.8" height="20" stroke-width="1" rx="5" style="fill:var(--tz-fig-green-tint);stroke:var(--cp-green)">
+</rect>
+<text x="267" y="179" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">proj:code</text>
+<rect x="260" y="233" width="78.8" height="20" stroke-width="1" rx="5" style="fill:var(--tz-fig-green-tint);stroke:var(--cp-green)">
+</rect>
+<text x="267" y="247" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">proj:code</text>
+<text x="260" y="142" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">dimension_names: [time, lat, lon]</text>
+<text x="260" y="210" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">dimension_names: [time, lat, lon]</text>
+<text x="260" y="278" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">dimension_names: [time, lat, lon]</text>
+<rect x="560" y="112" width="12" height="12" stroke="none" stroke-width="1" style="fill:var(--cp-blue)">
+</rect>
+<text x="580" y="122" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">multiscales</text>
+<rect x="560" y="136" width="12" height="12" stroke="none" stroke-width="1" style="fill:var(--cp-green)">
+</rect>
+<text x="580" y="146" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">proj</text>
+<rect x="560" y="160" width="12" height="12" stroke="none" stroke-width="1" style="fill:var(--cp-orange)">
+</rect>
+<text x="580" y="170" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">spatial</text>
+</svg>

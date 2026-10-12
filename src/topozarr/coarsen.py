@@ -24,7 +24,7 @@ from .pyramid import CoarseningMethod, Pyramid, validate_method
 
 
 def _level_source_chunks(
-    src_chunks: dict[str, int] | None, factor: int
+    src_chunks: dict[str, int] | None, factor: int, spatial: tuple[str, str]
 ) -> dict[str, int] | None:
     """Source chunk sizes as they appear at a level coarsened by ``factor``.
 
@@ -32,11 +32,16 @@ def _level_source_chunks(
     when the factor divides the block: 750 halves to 375 and then splits into
     (187, 94, 94, ...) rather than 187 across the board. An indivisible block
     therefore has no single coarsened size to snap to, and the level falls back
-    to the plain heuristic.
+    to the plain heuristic. Non-spatial dims are not coarsened and pass through.
     """
-    if src_chunks is None or any(c % factor for c in src_chunks.values()):
+    if src_chunks is None:
         return None
-    return {dim: chunk // factor for dim, chunk in src_chunks.items()}
+    if any(src_chunks[dim] % factor for dim in spatial):
+        return {dim: c for dim, c in src_chunks.items() if dim not in spatial}
+    return {
+        dim: chunk // factor if dim in spatial else chunk
+        for dim, chunk in src_chunks.items()
+    }
 
 
 def _coarsen_coord(values: np.ndarray, factor: int) -> np.ndarray:
@@ -343,7 +348,9 @@ def create_pyramid(
             y_dim,
             target_chunk_bytes=target_chunk_bytes,
             chunks_per_shard=chunks_per_shard,
-            source_chunk_sizes=_level_source_chunks(src_chunks, factors[idx]),
+            source_chunk_sizes=_level_source_chunks(
+                src_chunks, factors[idx], (x_dim, y_dim)
+            ),
         )
 
     attrs = create_multiscale_metadata(

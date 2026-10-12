@@ -12,6 +12,7 @@ from .chunking import (
     DEFAULT_CHUNK_BYTES,
     DEFAULT_CHUNKS_PER_SHARD,
     ChunksPerShard,
+    _divisors,
     calculate_chunk_size,
     calculate_shard_size,
     fill_nonspatial_shards,
@@ -252,6 +253,11 @@ def _create_var_encoding(
             target_chunk_bytes,
             min(effective_cps) if effective_cps else chunks_per_shard,
         )
+        # a shard must divide the source block for a dask write (safe_chunks)
+        for i in nonspatial_idx:
+            src = (source_chunk_sizes or {}).get(str(da.dims[i]))
+            if src is not None and src < da.shape[i]:
+                shards[i] = max(d for d in _divisors(src) if d <= shards[i])
 
     var_encoding = {"chunks": tuple(chunks)}
     if shards is not None:
@@ -263,7 +269,10 @@ def _create_var_encoding(
 def _spatial_source_chunks(
     ds: xr.Dataset, x_dim: str, y_dim: str
 ) -> dict[str, int] | None:
-    """Source chunk size per spatial dim, if all spatial vars agree."""
+    """Source chunk size per dim of the spatial vars, if they agree on x and y.
+
+    A non-spatial dim the vars disagree on is left out.
+    """
     sizes: dict[str, set[int]] = {x_dim: set(), y_dim: set()}
     for da in ds.data_vars.values():
         if not {x_dim, y_dim} <= set(da.dims):
@@ -271,11 +280,11 @@ def _spatial_source_chunks(
         chunks = source_chunks(da)
         if chunks is None:
             return None
-        for dim in (x_dim, y_dim):
-            sizes[dim].add(chunks[da.get_axis_num(dim)])
-    if any(len(s) != 1 for s in sizes.values()):
+        for dim, chunk in zip(da.dims, chunks, strict=True):
+            sizes.setdefault(str(dim), set()).add(chunk)
+    if any(len(sizes[dim]) != 1 for dim in (x_dim, y_dim)):
         return None
-    return {dim: s.pop() for dim, s in sizes.items()}
+    return {dim: s.pop() for dim, s in sizes.items() if len(s) == 1}
 
 
 def recommend_encoding(
@@ -496,15 +505,11 @@ def create_multiscale_metadata(
 
     def get_multiscales_transform(level: int) -> dict[str, Any]:
         # scale is relative to derived_from: the per-step ratio, not cumulative.
-        # translation is the pixel-registration half-cell shift ((step-1)/2;
-        # step=2 -> 0.5).
+        # translation is 0: levels share the spatial:transform corner origin
+        # (spatial README, "Usage with multiscales").
         step = factors[level] // factors[level - 1]
         s = [float(step) if (level > 0 and d in spatial_dims) else 1.0 for d in ds.dims]
-        t = [
-            (step - 1) / 2 if (level > 0 and d in spatial_dims) else 0.0
-            for d in ds.dims
-        ]
-        return {"scale": s, "translation": t}
+        return {"scale": s, "translation": [0.0] * len(ds.dims)}
 
     def get_level_spatial_attrs(level: int) -> dict[str, Any]:
         level_ds = level_datasets[level]

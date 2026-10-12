@@ -256,6 +256,18 @@ def test_write_levels_predecessor_from_store(create_dataset):
     )
 
 
+def test_write_levels_tags_kept_level_with_crs(create_dataset):
+    """A level written outside topozarr (e.g. virtual level 0) gets proj attrs."""
+    ds = create_dataset(nx=16, ny=16)
+    pyramid = create_pyramid(ds, levels=2)
+    store = zarr.storage.MemoryStore()
+    ds.drop_vars("spatial_ref").to_zarr(
+        store, group="0", zarr_format=3, consolidated=False
+    )
+    pyramid.write(store, mode="a", levels=[1])
+    assert zarr.open_group(store, path="0").attrs["proj:code"] == "EPSG:4326"
+
+
 def test_write_subset_mode_w_existing_store_raises(create_dataset):
     pyramid = create_pyramid(create_dataset(), levels=2)
     store = zarr.storage.MemoryStore()

@@ -1,0 +1,72 @@
+<svg role="img" aria-label="Six affine numbers map an array column and row to an x and y coordinate" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 330" width="720" height="330">
+<rect x="240" y="168" width="48" height="48" stroke="none" stroke-width="1" style="fill:var(--cp-blue)">
+</rect>
+<line x1="144" y1="72" x2="144" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="192" y1="72" x2="192" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="240" y1="72" x2="240" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="288" y1="72" x2="288" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="336" y1="72" x2="336" y2="264" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="96" y1="120" x2="384" y2="120" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="96" y1="168" x2="384" y2="168" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<line x1="96" y1="216" x2="384" y2="216" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-muted)">
+</line>
+<rect x="240" y="168" width="48" height="48" fill="none" stroke-width="1" style="stroke:var(--tz-fig-fg)">
+</rect>
+<rect x="96" y="72" width="288" height="192" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<text x="120" y="62" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">0</text>
+<text x="168" y="62" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">1</text>
+<text x="216" y="62" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">2</text>
+<text x="264" y="62" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">3</text>
+<text x="312" y="62" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">4</text>
+<text x="360" y="62" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">5</text>
+<text x="86" y="100" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="end" style="fill:var(--tz-fig-secondary)">0</text>
+<text x="86" y="148" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="end" style="fill:var(--tz-fig-secondary)">1</text>
+<text x="86" y="196" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="end" style="fill:var(--tz-fig-secondary)">2</text>
+<text x="86" y="244" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="end" style="fill:var(--tz-fig-secondary)">3</text>
+<text x="384" y="42" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="end" style="fill:var(--tz-fig-secondary)">col →</text>
+<text x="86" y="284" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="end" style="fill:var(--tz-fig-secondary)">row ↓</text>
+<circle cx="96" cy="72" r="4.5" style="fill:var(--cp-orange)">
+</circle>
+<text x="86" y="64" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="end" style="fill:var(--tz-fig-fg)">(c, f)</text>
+<circle cx="120" cy="96" r="2.5" style="fill:var(--tz-fig-fg)">
+</circle>
+<circle cx="264" cy="192" r="2.5" style="fill:var(--cp-carbon)">
+</circle>
+<line x1="96" y1="278" x2="144" y2="278" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="96" y1="274" x2="96" y2="282" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="144" y1="274" x2="144" y2="282" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<text x="120" y="296" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="middle" style="fill:var(--tz-fig-fg)">a</text>
+<line x1="398" y1="72" x2="398" y2="120" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="394" y1="72" x2="402" y2="72" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<line x1="394" y1="120" x2="402" y2="120" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<text x="408" y="100" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="start" style="fill:var(--tz-fig-fg)">e</text>
+<text x="448" y="60" font-family="Relative, sans-serif" font-size="14" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">[a, b, c, d, e, f]</text>
+<text x="448" y="88" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">x = a·col + b·row + c</text>
+<text x="448" y="106" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">y = d·col + e·row + f</text>
+<text x="448" y="138" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">a, e</text>
+<text x="492" y="138" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">pixel size; e &lt; 0 is north-up</text>
+<text x="448" y="158" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">b, d</text>
+<text x="492" y="158" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">rotation, usually 0</text>
+<text x="448" y="178" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">c, f</text>
+<text x="492" y="178" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">top-left corner of the grid</text>
+<circle cx="452" cy="208" r="2.5" style="fill:var(--tz-fig-fg)">
+</circle>
+<text x="464" y="212" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">pixel center = index + 0.5</text>
+<rect x="448" y="222" width="9" height="9" stroke="none" stroke-width="1" style="fill:var(--cp-blue)">
+</rect>
+<text x="464" y="232" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">col 3, row 2 → (3.5a + c, 2.5e + f)</text>
+</svg>

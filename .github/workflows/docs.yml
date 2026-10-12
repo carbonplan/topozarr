@@ -1,6 +1,7 @@
 name: docs
 
 on:
+  pull_request:
   push:
     branches: [main]
   workflow_dispatch:
@@ -33,12 +34,14 @@ jobs:
       - name: Build docs
         run: uv run mkdocs build --strict
 
-      - uses: actions/upload-pages-artifact@v3
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v3
         with:
           path: site/
 
   deploy:
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

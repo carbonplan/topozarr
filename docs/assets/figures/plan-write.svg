@@ -1,0 +1,41 @@
+<svg role="img" aria-label="create_pyramid returns a Pyramid plan, materialized by write or as_datatree" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 768 212" width="768" height="212">
+<rect x="24" y="90" width="56" height="40" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<text x="52" y="115" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="middle" style="fill:var(--tz-fig-fg)">ds</text>
+<line x1="84" y1="110" x2="105" y2="110" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="112,110 105,114.2 105,105.8" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-secondary)">
+</polygon>
+<rect x="116" y="90" width="170" height="40" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<text x="201" y="115" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="middle" style="fill:var(--tz-fig-fg)">create_pyramid()</text>
+<line x1="290" y1="110" x2="311" y2="110" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="318,110 311,114.2 311,105.8" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-secondary)">
+</polygon>
+<rect x="322" y="46" width="180" height="128" stroke-width="1.6" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="338" y="72" font-family="Relative, sans-serif" font-size="14" text-anchor="start" font-weight="500" style="fill:var(--tz-fig-fg)">Pyramid</text>
+<line x1="322" y1="84" x2="502" y2="84" stroke-width="1" stroke-linecap="round" style="stroke:var(--tz-fig-fg)">
+</line>
+<text x="338" y="108" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">level_templates</text>
+<text x="338" y="130" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">encoding</text>
+<text x="338" y="152" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-fg)">attrs</text>
+<text x="412" y="196" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">plan · nothing written</text>
+<line x1="506" y1="90" x2="533.97" y2="73.55" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="540,70 536.1,77.17 531.84,69.93" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-secondary)">
+</polygon>
+<line x1="506" y1="130" x2="533.97" y2="146.45" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="540,150 531.84,150.07 536.1,142.83" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-secondary)">
+</polygon>
+<rect x="544" y="46" width="200" height="40" stroke-width="1.6" style="fill:var(--cp-blue);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="644" y="71" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="middle" style="fill:var(--cp-carbon)">.write(store)</text>
+<text x="544" y="104" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">thread pool · reads source once</text>
+<rect x="544" y="134" width="200" height="40" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<text x="644" y="159" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" text-anchor="middle" style="fill:var(--tz-fig-fg)">.as_datatree()</text>
+<text x="544" y="192" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">lazy DataTree → to_zarr (Dask)</text>
+</svg>

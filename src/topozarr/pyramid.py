@@ -385,6 +385,10 @@ class Pyramid:
                     "or write it first"
                 )
         root.attrs.update(self.attrs)
+        # levels kept from the store (e.g. a virtual level 0) get the CRS too
+        for lvl in set(self.level_templates) - write_levels_set:
+            if str(lvl) in root:
+                root[str(lvl)].attrs.update(level_proj_attrs(self.attrs["proj:code"]))
 
         all_stats: dict[str, Any] = {}
         pipeline = _codec_pipeline(store)

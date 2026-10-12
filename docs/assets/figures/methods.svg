@@ -1,0 +1,47 @@
+<svg role="img" aria-label="A 2×2 window reduced to one cell by mean, max, min, sum and nearest" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 206" width="720" height="206">
+<text x="24" y="44" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">2 × 2 window</text>
+<rect x="24" y="58" width="44" height="44" stroke-width="1" style="fill:var(--cp-blue);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="46" y="86" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" text-anchor="middle" style="fill:var(--cp-carbon)">2</text>
+<rect x="68" y="58" width="44" height="44" stroke-width="1" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="90" y="86" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" text-anchor="middle" style="fill:var(--tz-fig-fg)">6</text>
+<rect x="24" y="102" width="44" height="44" stroke-width="1" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="46" y="130" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" text-anchor="middle" style="fill:var(--tz-fig-fg)">1</text>
+<rect x="68" y="102" width="44" height="44" stroke-width="1" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="90" y="130" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" text-anchor="middle" style="fill:var(--tz-fig-fg)">7</text>
+<rect x="24" y="58" width="88" height="88" fill="none" stroke-width="1.6" style="stroke:var(--tz-fig-fg)">
+</rect>
+<line x1="124" y1="102" x2="153" y2="102" stroke-width="1.2" stroke-linecap="round" style="stroke:var(--tz-fig-secondary)">
+</line>
+<polygon points="160,102 153,106.2 153,97.8" stroke="none" stroke-width="1" stroke-linejoin="round" style="fill:var(--tz-fig-secondary)">
+</polygon>
+<text x="176" y="44" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="start" style="fill:var(--tz-fig-secondary)">one cell at the next level</text>
+<rect x="176" y="58" width="88" height="88" stroke-width="1.6" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="220" y="110" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" text-anchor="middle" style="fill:var(--tz-fig-fg)">4</text>
+<text x="220" y="170" font-family="Relative, sans-serif" font-size="13" text-anchor="middle" font-weight="500" style="fill:var(--tz-fig-fg)">mean</text>
+<text x="220" y="188" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">(2+6+1+7) / 4</text>
+<rect x="284" y="58" width="88" height="88" stroke-width="1.6" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="328" y="110" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" text-anchor="middle" style="fill:var(--tz-fig-fg)">7</text>
+<text x="328" y="170" font-family="Relative, sans-serif" font-size="13" text-anchor="middle" font-weight="500" style="fill:var(--tz-fig-fg)">max</text>
+<text x="328" y="188" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">largest</text>
+<rect x="392" y="58" width="88" height="88" stroke-width="1.6" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="436" y="110" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" text-anchor="middle" style="fill:var(--tz-fig-fg)">1</text>
+<text x="436" y="170" font-family="Relative, sans-serif" font-size="13" text-anchor="middle" font-weight="500" style="fill:var(--tz-fig-fg)">min</text>
+<text x="436" y="188" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">smallest</text>
+<rect x="500" y="58" width="88" height="88" stroke-width="1.6" style="fill:var(--tz-fig-tint);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="544" y="110" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" text-anchor="middle" style="fill:var(--tz-fig-fg)">16</text>
+<text x="544" y="170" font-family="Relative, sans-serif" font-size="13" text-anchor="middle" font-weight="500" style="fill:var(--tz-fig-fg)">sum</text>
+<text x="544" y="188" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">2+6+1+7</text>
+<rect x="608" y="58" width="88" height="88" stroke-width="1.6" style="fill:var(--cp-blue);stroke:var(--tz-fig-fg)">
+</rect>
+<text x="652" y="110" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="24" text-anchor="middle" style="fill:var(--cp-carbon)">2</text>
+<text x="652" y="170" font-family="Relative, sans-serif" font-size="13" text-anchor="middle" font-weight="500" style="fill:var(--tz-fig-fg)">nearest</text>
+<text x="652" y="188" font-family="Relative Mono, ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12" text-anchor="middle" style="fill:var(--tz-fig-secondary)">top-left cell</text>
+</svg>

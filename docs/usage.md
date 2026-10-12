@@ -1,50 +1,102 @@
 # Usage
 
-## Basic example
+This page walks through the full workflow: build a pyramid from the Xarray `air_temperature` tutorial dataset, write it to a Zarr store, and open it back up.
 
-Load an Xarray dataset, create a pyramid, then write it:
+```python exec="on" session="usage"
+# hidden: render CarbonPlan-themed light and dark figures inline
+import sys
 
-```python
+import matplotlib
+
+matplotlib.use("Agg")
+
+
+sys.path.insert(0, "scripts")
+from docs_plot import html_repr, render  # noqa: E402
+
+
+# print here is markdown-exec's captured print, not the module's
+def show(plot):
+    print(render(plot))
+```
+
+## Load and assign a CRS
+
+`create_pyramid` needs to know the dataset's coordinate reference system (CRS). [xproj](https://xproj.readthedocs.io) adds a `.proj` accessor for assigning one.
+
+```python exec="on" source="above" session="usage" html="true"
 import xarray as xr
-import xproj  # for CRS assignment
-from topozarr import create_pyramid
+import xproj  # noqa: F401
 
 ds = xr.tutorial.open_dataset("air_temperature").drop_encoding()
 ds = ds.proj.assign_crs(spatial_ref="EPSG:4326")
+ds
+print(html_repr(ds))  # markdown-exec: hide
+```
+
+## Plan and write
+
+`create_pyramid` is lazy. It returns a plan and writes nothing until you call `write`. `levels` is the total number of levels. Level `0` is the original resolution, and each level after it is 2x coarser along each spatial dimension.
+
+<div class="tz-figure">
+--8<-- "docs/assets/figures/levels.svg"
+</div>
+
+```python exec="on" source="above" session="usage"
+from topozarr import create_pyramid
 
 pyramid = create_pyramid(
     ds,
-    levels=2,
+    levels=3,
     x_dim="lon",
     y_dim="lat",
     method="mean",  # "mean" (default) | "max" | "min" | "sum" | "nearest"
 )
-
-# compute and write all levels
 pyramid.write("pyramid.zarr")
 ```
 
-`levels` is the total number of resolution levels including the original. Level `0` is the original (highest) resolution; each subsequent level is coarsened by 2× per spatial dimension. `levels="auto"` keeps adding levels until the smaller spatial dim would drop below `min_dim` (default 256).
+For land cover, masks, or other class codes, use `method="nearest"` so that averaging doesn't invent new classes (see [Categorical data](examples/categorical.md)).
 
-To build a non-uniform pyramid, pass `factors` instead of `levels` — explicit cumulative downsample factors per level, e.g. `factors=[1, 4, 16]` for native, 4×, and 16×.
+## Open as a DataTree
 
-```python
-pyramid = create_pyramid(ds, factors=[1, 4, 16])
+Each level is a child group that covers the same extent at half the resolution of the level before it:
+
+```python exec="on" source="above" session="usage" html="true"
+dt = xr.open_datatree("pyramid.zarr", engine="zarr", consolidated=False)
+dt
+print(html_repr(dt))  # markdown-exec: hide
 ```
 
-Levels are always named sequentially (`0, 1, 2, …`) regardless of whether you specify `factors`; the downsample factor isn't in the node name but in the multiscales metadata (`layout[i].transform.scale` and each level's `spatial:transform`).
+```python exec="on" source="above" session="usage" html="true"
+import matplotlib.pyplot as plt
 
-## Writing backends
 
-`pyramid.write` accepts a local path, an `Obstore` store, or an `Icechunk` store.
+def plot(mode):
+    levels = ["0", str(len(dt.children) - 1)]  # finest and coarsest
+    fig, axes = plt.subplots(1, 2, figsize=(10, 3.5), layout="constrained")
+    for ax, level in zip(axes, levels):
+        im = dt[level].air.isel(time=0).plot(
+            ax=ax, vmin=230, vmax=305, cmap=f"warm_{mode}", add_colorbar=False
+        )
+        ax.set_title(f"level {level}")
+    fig.colorbar(im, ax=axes, label="air temperature [K]")
+    return fig
+
+
+show(plot)
+```
+
+Open the store in [zarr-layer](https://zarr-layer.demo.carbonplan.org/) to view it on a map.
+
+## Choosing a store
+
+`pyramid.write` accepts a local path, an Obstore store, or an Icechunk store. Obstore and Icechunk can write to either local disk or cloud object storage.
 
 === "Local path"
 
     ```python
     pyramid.write("pyramid.zarr")
     ```
-
-    For faster local writes, install the `zarrs` extra (see [Tips](tips.md#faster-local-writes)).
 
 === "Icechunk"
 
@@ -54,6 +106,7 @@ Levels are always named sequentially (`0, 1, 2, …`) regardless of whether you 
     storage = icechunk.s3_storage(
         bucket="<your_bucket>", prefix="<your_prefix>", from_env=True
     )
+    # local: storage = icechunk.local_filesystem_storage("pyramid.icechunk")
     repo = icechunk.Repository.create(storage)
     session = repo.writable_session("main")
     pyramid.write(session.store, mode="w")
@@ -66,31 +119,30 @@ Levels are always named sequentially (`0, 1, 2, …`) regardless of whether you 
     from obstore.store import from_url
     from zarr.storage import ObjectStore
 
-    store = ObjectStore(from_url("s3://carbonplan-scratch/topozarr/air.zarr", region="us-west-2"))
+    store = ObjectStore(from_url("s3://<your_bucket>/air.zarr", region="us-west-2"))
+    # local: store = ObjectStore(from_url("file:///absolute/path/to/air.zarr", mkdir=True))
     pyramid.write(store, mode="w")
     ```
 
-    Seeing `"Connect, TimedOut"` errors? See [Tips](tips.md#obstore-timeouts).
+## Single-resolution stores
 
-## Single-resolution datasets (no pyramid)
+Small datasets often don't need a pyramid. `zarr-layer` can render a single-resolution store as long as its chunks are sized for the web. `attach_geozarr_metadata` adds the GeoZarr attributes, and `recommend_encoding` returns the same chunking that `create_pyramid` uses for each level:
 
-Lower-resolution datasets often don't need overviews: `zarr-layer` can render a flat store as long as its chunking is web-friendly. `attach_geozarr_metadata` adds the geozarr convention attrs (`proj:*`, `spatial:*`, `zarr_conventions`), and `recommend_encoding` returns the same chunk/shard heuristic `create_pyramid` applies per level. Without overviews, a zoomed-out read still pulls the full resolution.
-
-```python
+```python exec="on" source="above" session="usage"
 from topozarr import attach_geozarr_metadata, recommend_encoding
 
-ds = attach_geozarr_metadata(ds, x_dim="lon", y_dim="lat")
-ds.to_zarr(
+flat = attach_geozarr_metadata(ds, x_dim="lon", y_dim="lat")
+flat.to_zarr(
     "flat.zarr",
     zarr_format=3,
     consolidated=False,
-    encoding=recommend_encoding(ds, x_dim="lon", y_dim="lat"),
+    encoding=recommend_encoding(flat, x_dim="lon", y_dim="lat"),
 )
 ```
 
 ## Visualization hints
 
-Optional. If you'll render the pyramid in [zarr-layer](https://zarr-layer.demo.carbonplan.org/), `layer_hints` embeds a default colormap and color range so it displays sensibly without manual setup. Skip it otherwise — it has no effect on the data.
+`layer_hints` is optional. It embeds a default colormap and color range for [zarr-layer](https://zarr-layer.demo.carbonplan.org/) and has no effect on the data.
 
 ```python
 from topozarr.metadata import ZarrLayerVarConfig
@@ -100,12 +152,16 @@ pyramid = create_pyramid(
     levels=2,
     x_dim="lon",
     y_dim="lat",
-    layer_hints={"air": ZarrLayerVarConfig(colormap="blues", clim=[230, 310])},
+    layer_hints={"air": ZarrLayerVarConfig(colormap="warm", clim=[230, 310])},
 )
 ```
 
-Written into the root `zarr-layer` metadata key; nothing else changes.
+Next, see [Tuning](tuning.md) for level counts and chunk sizes, or the [examples](examples/categorical.md) for categorical data, regridding, Icechunk, and Dask.
 
-## Chunking
+```python exec="on" session="usage"
+# hidden: remove the stores this page wrote
+import shutil
 
-`pyramid.write` applies chunk and shard sizes from `pyramid.encoding` automatically. To tune them, see [Tuning](tuning.md#chunk-and-shard-sizes).
+for path in ["pyramid.zarr", "flat.zarr"]:
+    shutil.rmtree(path, ignore_errors=True)
+```

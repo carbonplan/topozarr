@@ -43,12 +43,15 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      check_paths: true
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
 
 plugins:
   - search
+  - markdown-exec
   - mkdocstrings:
       handlers:
         python:
@@ -70,10 +73,19 @@ plugins:
 
 nav:
   - Home: index.md
-  - Usage: usage.md
-  - Tips & caveats: tips.md
-  - Tuning: tuning.md
-  - How it works: design.md
-  - API Reference: api.md
-  - Contributing: contributing.md
-  - Release notes: releases.md
+  - Guide:
+      - Usage: usage.md
+      - Tuning: tuning.md
+      - Tips and caveats: tips.md
+  - Examples:
+      - Categorical data: examples/categorical.md
+      - Icechunk and Dask: examples/icechunk-dask.md
+      - Regridding: examples/regrid.md
+      - Hybrid stores: examples/hybrid-icechunk.md
+  - Concepts:
+      - How it works: design.md
+      - GeoZarr: geozarr.md
+  - Reference:
+      - API: api.md
+      - Release notes: releases.md
+      - Contributing: contributing.md

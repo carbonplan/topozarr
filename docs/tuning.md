@@ -1,27 +1,49 @@
 # Tuning
 
-## Quick reference
+The defaults work well for most data, so you may not need this page. When you do, these are the settings that matter. The examples use the `air_temperature` tutorial dataset.
 
-| Knob | Where | Effect |
+| Setting | Where | Effect |
 |------|-------|--------|
-| [`levels` / `factors`](usage.md#basic-example) | `create_pyramid` | number of levels, or explicit cumulative downsample factors |
-| [`target_chunk_bytes`](#chunk-and-shard-sizes) | `create_pyramid` | chunk size on disk (default ~500 KB) |
-| [`chunks_per_shard`](#chunk-and-shard-sizes) | `create_pyramid` | shard size = work unit; `None` disables sharding |
-| [`max_region_bytes`](tips.md#progress-and-memory) | `Pyramid.write` | cap on level-0 tile size and per-worker memory |
-| [`max_workers`](tips.md#progress-and-memory) | `Pyramid.write` | thread pool size; `None` = RAM/CPU-derived |
-| [`progress`](tips.md#progress-and-memory) | `Pyramid.write` | tqdm bar over written regions |
-| [codec pipeline](tips.md#faster-local-writes) | `zarr.config` | zarrs (Rust) used automatically for local stores with the `zarrs` extra |
+| [`levels` or `factors`](#level-counts) | `create_pyramid` | Number of levels, or explicit downsampling factors |
+| [`target_chunk_bytes`](#chunks-and-shards) | `create_pyramid` | Chunk size on disk (default ~500 KB) |
+| [`chunks_per_shard`](#chunks-and-shards) | `create_pyramid` | Shard size, which is also the unit of work. `None` disables sharding |
+| [`progress`, `max_workers`](tips.md#progress-and-memory) | `Pyramid.write` | Progress bar, thread count, and memory |
 
-## Chunk and shard sizes
+```python exec="on" source="above" session="tuning" result="python"
+import xarray as xr
+import xproj  # noqa: F401
 
-`pyramid.encoding` holds the chunk and shard sizes per variable per level;
-`pyramid.write` applies them automatically.
+from topozarr import create_pyramid
 
-Spatial chunks target `target_chunk_bytes` (~500 KB, sized for web
-visualization). `chunks_per_shard` sets chunks per shard along each spatial
-dimension; valid values are `1, 2, 4, 8, 16, 32`. Shards are the unit of work
-during writes: bigger shards mean fewer, larger reads/writes and more memory
-per worker.
+ds = xr.tutorial.open_dataset("air_temperature").drop_encoding()
+ds = ds.proj.assign_crs(spatial_ref="EPSG:4326")
+print(dict(ds.sizes))
+```
+
+## Level counts
+
+`levels="auto"` keeps adding 2x coarser levels until the smaller spatial dimension would drop below `min_dim`. The default of 256 is about one web map tile. We lower it here because the tutorial grid is small:
+
+```python exec="on" source="above" session="tuning" result="python"
+pyramid = create_pyramid(ds, levels="auto", min_dim=6, x_dim="lon", y_dim="lat")
+for level, template in pyramid.level_templates.items():
+    print(level, dict(template.sizes))
+```
+
+`factors` sets explicit downsampling factors instead, each relative to level `0` (here, native resolution and 4x). Levels are still named `0, 1, ...`, and each level's factor is recorded in the multiscales metadata:
+
+```python exec="on" source="above" session="tuning" result="python"
+sparse = create_pyramid(ds, factors=[1, 4], x_dim="lon", y_dim="lat")
+print(dict(sparse.level_templates[1].sizes))
+```
+
+## Chunks and shards
+
+`pyramid.encoding` holds the chunk and shard sizes for each variable at each level, and `write` applies them. Spatial chunks are sized to approach `target_chunk_bytes`. `chunks_per_shard` (1, 2, 4, 8, 16, 32, or `None`) sets the number of chunks per shard along each spatial dimension. Shards are the unit of work, so bigger shards mean fewer, larger writes and more memory per worker.
+
+<div class="tz-figure">
+--8<-- "docs/assets/figures/chunks-shards.svg"
+</div>
 
 | `chunks_per_shard` | chunks/shard | approx shard size |
 |--------------------|:------------:|:-----------------:|
@@ -31,26 +53,39 @@ per worker.
 | 8 | 64 | ~32 MB |
 | 16 | 256 | ~128 MB |
 
-## Non-spatial dimensions
+On small grids, any leftover shard budget goes to non-spatial dimensions like `time`. Chunks along those dimensions stay at size 1:
 
-`chunks_per_shard` also sets a shard byte budget. Any budget the spatial
-dimensions can't use (small rasters, coarse levels) goes to non-spatial
-dimensions (`time`, `band`, ...) instead. Chunk size along those dimensions stays 1,
-so reads still fetch a single element.
+<div class="tz-figure">
+--8<-- "docs/assets/figures/time-shards.svg"
+</div>
 
-??? note "Override shard shape per variable"
+```python exec="on" source="above" session="tuning" result="python"
+for cps in [1, 4, None]:
+    enc = create_pyramid(ds, levels=2, chunks_per_shard=cps, x_dim="lon", y_dim="lat").encoding
+    print(f"chunks_per_shard={cps}: {enc['/0']['air']}")
+```
+
+??? note "Custom chunks and shards"
 
     Edit `pyramid.encoding` before writing. Values are tuples in dimension
-    order, so use `.dims` to find the axis:
+    order (`time, lat, lon`), and each shard must be a whole multiple of its
+    chunk. This example puts 365 time steps in each shard on every level:
 
-    ```python
-    enc = pyramid.encoding["/0"]["wind_speed"]
-    axis = pyramid.level_templates[0]["wind_speed"].dims.index("time")
-
-    shards = list(enc["shards"])
-    shards[axis] = 1  # one timestep per shard
-    enc["shards"] = tuple(shards)
+    ```python exec="on" source="above" session="tuning" result="python"
+    for level_encoding in pyramid.encoding.values():
+        _, *spatial = level_encoding["air"]["shards"]
+        level_encoding["air"]["shards"] = (365, *spatial)
+    print(pyramid.encoding["/0"]["air"])
     ```
 
-    Repeat per level and variable. Each shard must be a whole multiple of its
-    chunk.
+??? note "Rewrite some levels and get per-level timings"
+
+    `levels=[...]` with `mode="a"` rewrites a subset of levels and keeps the
+    rest. Level `N - 1` must be in the subset or already in the store.
+    `stats=True` returns timings for each level.
+
+    ```python
+    pyramid.write("pyramid.zarr")
+    stats = pyramid.write("pyramid.zarr", mode="a", levels=[1, 2], stats=True)
+    print({level: s["wall_s"] for level, s in stats.items()})
+    ```

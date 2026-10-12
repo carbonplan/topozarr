@@ -1,6 +1,6 @@
 # Contributing
 
-Clone the repo and install with the `test` dependency group. Building from source requires a [Rust toolchain](https://rustup.rs) for the `topozarr-core` kernel (in `core/`):
+We welcome contributions. To get started, clone the repository and install the `test` dependency group. Building from source requires a [Rust toolchain](https://rustup.rs) for the `topozarr-core` kernel (in `core/`):
 
 ```bash
 git clone https://github.com/carbonplan/topozarr
@@ -8,28 +8,28 @@ cd topozarr
 uv sync --group test
 ```
 
-Run tests:
+Run the tests:
 
 ```bash
 uv run pytest -n auto
 ```
 
-Run conformance tests against the GeoZarr spec (requires the `conformance` group):
+Run the conformance tests against the GeoZarr spec (requires the `conformance` group):
 
 ```bash
 uv sync --group conformance
 uv run pytest -n auto -m conformance
 ```
 
-Coarsening methods are exported by the kernel as `topozarr_core.METHODS`. `create_pyramid(method=...)` validates against it, so a topozarr paired with a core missing a method fails at plan time rather than mid-write. A test keeps the `CoarseningMethod` alias equal to it.
+The kernel exports its coarsening methods as `topozarr_core.METHODS`. `create_pyramid(method=...)` validates against this list, so if `topozarr` is paired with a kernel that's missing a method, it fails when building the plan rather than partway through a write. A test keeps the `CoarseningMethod` alias in sync with the list.
 
-Lint and format:
+Lint and format the code:
 
 ```bash
 uv run prek run --all-files
 ```
 
-To regenerate the demo datasets in S3 (requires AWS credentials), install the `tutorial` extra and run the build script:
+To regenerate the demo datasets on S3 (requires AWS credentials), install the `tutorial` extra and run the build script:
 
 ```bash
 uv sync --group test --extra tutorial
@@ -38,7 +38,7 @@ uv run python scripts/build_demo_data.py --help
 
 ## License
 
-This code is licensed under the MIT License — see the [LICENSE](https://github.com/carbonplan/topozarr/blob/main/LICENSE) file for details.
+This code is licensed under the MIT License. See the [LICENSE](https://github.com/carbonplan/topozarr/blob/main/LICENSE) file for details.
 
 ## About
 
