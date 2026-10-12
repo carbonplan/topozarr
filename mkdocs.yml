@@ -24,7 +24,6 @@ theme:
         icon: material/brightness-7
         name: Switch to dark mode
   features:
-    - navigation.sections
     - navigation.top
     - content.code.copy
     - content.code.annotate
@@ -49,6 +48,7 @@ markdown_extensions:
 
 plugins:
   - search
+  - markdown-exec
   - mkdocstrings:
       handlers:
         python:
@@ -71,6 +71,11 @@ plugins:
 nav:
   - Home: index.md
   - Usage: usage.md
+  - Examples:
+      - Quickstart: examples/quickstart.md
+      - Categorical data: examples/categorical.md
+      - Tuning: examples/tuning-example.md
+      - Icechunk and Dask: examples/icechunk-dask.md
   - Tips & caveats: tips.md
   - Tuning: tuning.md
   - How it works: design.md

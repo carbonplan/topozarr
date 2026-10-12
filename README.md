@@ -41,14 +41,7 @@ uv add 'topozarr[zarrs]'
 pip install 'topozarr[zarrs]'
 ```
 
-Remote stores keep zarr-python's pipeline until [zarrs-python#139](https://github.com/zarrs/zarrs-python/issues/139) lands. To opt in anyway, set it yourself; `write` leaves an explicitly configured pipeline alone:
-
-```python
-import zarr
-import zarrs
-
-zarr.config.set({"codec_pipeline.path": "zarrs.ZarrsCodecPipeline"})
-```
+Remote stores keep zarr-python's pipeline by default; see [Tips](https://carbonplan.github.io/topozarr/tips/#faster-local-writes) to opt in.
 
 ### Example
 
@@ -99,18 +92,9 @@ ds.to_zarr(
 )
 ```
 
-### Coming from ndpyramid
-The library [ndpyramid](https://github.com/carbonplan/ndpyramid) also builds multiscale Zarr stores. However, it was built as a companion for [carbonplan-maps](https://github.com/carbonplan/maps), which requires the source data to be reprojected to EPSG:3857, square (e.g. 128x128), slippy-map-tile-compliant shapes. The newer mapping library, [zarr-layer](https://zarr-layer.demo.carbonplan.org/), relaxes these requirements significantly, which simplifies multiscales creation and allows topozarr to be much simpler and more flexible. This project is essentially a coarsen call and some metadata in a trenchcoat.
+### More
 
-
-| ndpyramid | topozarr |
-| --- | --- |
-| `pyramid_coarsen` | `create_pyramid(ds, levels=...)` |
-| `pyramid_reproject` | no equivalent — reproject upstream, then `create_pyramid` |
-| `pyramid_regrid` | no equivalent — regrid upstream, then `create_pyramid` |
-
-If you need a different grid, do it before and hand
-the result to `create_pyramid`.
+[Runnable examples](https://carbonplan.github.io/topozarr/examples/quickstart/) cover categorical data, tuning, Icechunk, and Dask. Coming from [ndpyramid](https://github.com/carbonplan/ndpyramid)? See the [comparison](https://carbonplan.github.io/topozarr/tips/#coming-from-ndpyramid).
 
 
 ## Contributing

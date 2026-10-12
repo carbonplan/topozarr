@@ -61,8 +61,15 @@ conformance = [
     {include-group = "test"},
 ]
 docs = [
+    "dask>=2026.7.1",
+    "icechunk>=2.0.6",
+    "markdown-exec>=1.12.4",
+    "matplotlib>=3.11.2",
     "mkdocs-material>=9",
     "mkdocstrings[python]>=0.25",
+    "netcdf4>=1.7.4",
+    "pooch>=1.9.0",
+    "rioxarray>=0.23.0",
 ]
 
 

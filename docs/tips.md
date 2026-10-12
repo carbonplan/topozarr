@@ -66,12 +66,10 @@ If connect timeouts persist on large instances, try reducing `async.concurrency`
 ```python
 dt = pyramid.as_datatree()
 dt.to_zarr("pyramid.zarr", zarr_format=3, consolidated=False,
-           encoding=pyramid.encoding)
+           encoding=pyramid.encoding, align_chunks=True)
 ```
 
-Deep levels of a Dask-backed source can outrun the chunk band that
-`recommend_encoding` flexes to; if `to_zarr` raises on `safe_chunks`, pass
-`safe_chunks=False`.
+`align_chunks=True` rechunks Dask to nest inside the recommended shards; without it `to_zarr` raises on `safe_chunks` when they don't line up (e.g. `time` shards of 128 over source chunks of 730). See the [Dask example](examples/icechunk-dask.md#write-with-dask).
 
 ## Coming from ndpyramid
 

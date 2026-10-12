@@ -1,5 +1,7 @@
 # Usage
 
+Runnable versions of these snippets, with output, are in [Examples](examples/quickstart.md).
+
 ## Basic example
 
 Load an Xarray dataset, create a pyramid, then write it:
@@ -29,7 +31,7 @@ pyramid.write("pyramid.zarr")
 To build a non-uniform pyramid, pass `factors` instead of `levels` — explicit cumulative downsample factors per level, e.g. `factors=[1, 4, 16]` for native, 4×, and 16×.
 
 ```python
-pyramid = create_pyramid(ds, factors=[1, 4, 16])
+pyramid = create_pyramid(ds, factors=[1, 4, 16], x_dim="lon", y_dim="lat")
 ```
 
 Levels are always named sequentially (`0, 1, 2, …`) regardless of whether you specify `factors`; the downsample factor isn't in the node name but in the multiscales metadata (`layout[i].transform.scale` and each level's `spatial:transform`).
