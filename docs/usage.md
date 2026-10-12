@@ -47,7 +47,7 @@ from topozarr import create_pyramid
 
 pyramid = create_pyramid(
     ds,
-    levels=2,
+    levels=3,
     x_dim="lon",
     y_dim="lat",
     method="mean",  # "mean" (default) | "max" | "min" | "sum" | "nearest"

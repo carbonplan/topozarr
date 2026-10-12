@@ -40,7 +40,7 @@ from topozarr import create_pyramid
 
 create_pyramid(fine, levels=3, x_dim="lon", y_dim="lat").write("regrid.zarr")
 dt = xr.open_datatree("regrid.zarr", engine="zarr", consolidated=False)
-print({level: dict(dt[level].sizes) for level in dt.children})
+print({level: dict(dt[level].sizes) for level in sorted(dt.children)})
 ```
 
 ```python exec="on" source="above" session="regrid" html="true"

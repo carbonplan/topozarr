@@ -71,7 +71,7 @@ pyramid.write(session.store, mode="a", levels=[1, 2])
 session.commit("overviews")
 
 dt = xr.open_datatree(repo.readonly_session("main").store, engine="zarr", consolidated=False)
-for level in dt.children:
+for level in sorted(dt.children):
         print(level, dict(dt[level].sizes), dt[level].attrs["proj:code"])
 ```
 

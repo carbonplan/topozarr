@@ -63,8 +63,8 @@ for method in ["nearest", "mean"]:
     coarse[method] = dt["3"].landcover
 
 coarse = xr.concat(coarse.values(), dim=xr.Variable("method", list(coarse)))
-coarse
-print(html_repr(coarse))  # markdown-exec: hide
+coarse.to_dataset()
+print(html_repr(coarse.to_dataset()))  # markdown-exec: hide
 ```
 
 `nearest` returns only real classes. `mean` keeps the dtype, but it fills the boundaries between classes with codes that aren't classes (red in the plot below):
