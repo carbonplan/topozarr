@@ -1,28 +1,5 @@
 # Tips & caveats
 
-## Faster local writes
-
-With the `zarrs` extra installed, `write` uses the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline automatically for local stores. Remote stores keep zarr-python's pipeline until [zarrs-python#139](https://github.com/zarrs/zarrs-python/issues/139) lands. To opt in anyway, set it yourself; `write` leaves an explicitly configured pipeline alone:
-
-```python
-import zarr
-import zarrs
-
-zarr.config.set({"codec_pipeline.path": "zarrs.ZarrsCodecPipeline"})
-```
-
-## Progress and memory
-
-Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written regions (requires `tqdm` to be installed):
-
-```python
-pyramid.write("pyramid.zarr", progress=True)
-```
-
-The thread pool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 tiles; peak memory is roughly `max_workers * 5 * max_region_bytes`.
-
-See [How it works](design.md#write-path) for how tiles are chosen.
-
 ## Input requirements
 
 `create_pyramid` validates these when the plan is built, so a bad input should fail
@@ -44,16 +21,32 @@ Need a different grid? Reproject or regrid upstream, then hand the result to `cr
     integers (e.g. WorldCover `uint8`) stay float; open them with
     `mask_and_scale=False` to keep the integer dtype.
 
-## Dask distributed
+## Progress and memory
 
-`Pyramid.write` does not use Dask — it streams regions through a local thread pool. For Dask-distributed writes, use `as_datatree()`, which returns a lazy `xr.DataTree` with all levels coarsened via `xarray.coarsen`. Pass `pyramid.encoding` to `to_zarr` to keep the recommended chunking and sharding:
+Pass `progress=True` to show a [tqdm](https://tqdm.github.io/) bar over written regions (requires `tqdm` to be installed):
 
 ```python
-dt = pyramid.as_datatree()
-dt.to_zarr("pyramid.zarr", zarr_format=3, consolidated=False, encoding=pyramid.encoding)
+pyramid.write("pyramid.zarr", progress=True)
 ```
 
-The recommended shards are sized to divide the Dask chunks. If `to_zarr` still raises on `safe_chunks` (e.g. spatial Dask chunks smaller than the array's single chunk), pass `align_chunks=True`. See the [Dask example](examples/icechunk-dask.md#write-with-dask).
+The thread pool size is auto-derived from CPU count and available RAM. Pass `max_workers` to override, and lower `max_region_bytes` (default 256 MB) to shrink level-0 tiles; peak memory is roughly `max_workers * 5 * max_region_bytes`.
+
+See [How it works](design.md#write-path) for how tiles are chosen.
+
+## Dask distributed
+
+`Pyramid.write` uses a local thread pool, not Dask. For Dask-distributed writes, use `pyramid.as_datatree()` and pass `pyramid.encoding` to `to_zarr` (see the [Dask example](examples/icechunk-dask.md#write-with-dask)). If `to_zarr` raises on `safe_chunks`, pass `align_chunks=True`.
+
+## Faster local writes
+
+With the `zarrs` extra installed, `write` uses the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline automatically for local stores. Remote stores keep zarr-python's pipeline until [zarrs-python#139](https://github.com/zarrs/zarrs-python/issues/139) lands. To opt in anyway, set it yourself; `write` leaves an explicitly configured pipeline alone:
+
+```python
+import zarr
+import zarrs
+
+zarr.config.set({"codec_pipeline.path": "zarrs.ZarrsCodecPipeline"})
+```
 
 ## Obstore timeouts
 

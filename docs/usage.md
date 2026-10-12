@@ -1,6 +1,6 @@
 # Usage
 
-Build a pyramid from the Xarray `air_temperature` tutorial dataset, write it, and open it back. Every code block on this page runs when the docs are built.
+Build a pyramid from the Xarray `air_temperature` tutorial dataset, write it, and open it back.
 
 ```python exec="on" session="usage"
 # hidden: render matplotlib figures inline
@@ -47,6 +47,8 @@ pyramid = create_pyramid(
 )
 pyramid.write("pyramid.zarr")
 ```
+
+For land cover, masks, or other class codes, use `method="nearest"` (see [Categorical data](examples/categorical.md)).
 
 ## Open as a DataTree
 

@@ -7,9 +7,8 @@ This page uses a window of an [ESA WorldCover](https://esa-worldcover.org) 2021 
 ```python exec="on" session="categorical"
 # hidden: render matplotlib figures inline
 import base64
-from io import BytesIO
-
 import os
+from io import BytesIO
 
 import matplotlib
 

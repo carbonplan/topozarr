@@ -1,6 +1,6 @@
-# Icechunk, Dask, and packed integers
+# Icechunk and Dask
 
-A Dask-backed, packed-integer source written to an [Icechunk](https://icechunk.io) repository, then the same pyramid written with Dask via `as_datatree`. Everything runs locally; for S3, swap the storage (see [Usage](../usage.md#writing-to-the-cloud)).
+Write a packed, Dask-backed source to an [Icechunk](https://icechunk.io) repo, then write the same pyramid with Dask. For S3, swap the storage (see [Usage](../usage.md#writing-to-the-cloud)).
 
 ## A packed source
 

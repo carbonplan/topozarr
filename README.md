@@ -21,27 +21,19 @@ Follows the [zarr-conventions](https://github.com/zarr-conventions):
 
 ```bash
 uv add topozarr
-# or
+
+# optional extras
+uv add 'topozarr[tutorial]'  # deps for the examples
+uv add 'topozarr[zarrs]'     # faster local writes (Rust codec pipeline)
+```
+
+```bash
 pip install topozarr
+
+# optional extras
+pip install 'topozarr[tutorial]'  # deps for the examples
+pip install 'topozarr[zarrs]'     # faster local writes (Rust codec pipeline)
 ```
-
-Multiscales are computed by `topozarr-core`, a small Rust kernel installed automatically as a wheel. The `tutorial` extra includes everything needed to run the examples below:
-
-```bash
-uv add 'topozarr[tutorial]'
-# or
-pip install 'topozarr[tutorial]'
-```
-
-For faster local writes, add the `zarrs` extra. `Pyramid.write` then uses the Rust [zarrs](https://github.com/zarrs/zarrs-python) codec pipeline automatically for local stores:
-
-```bash
-uv add 'topozarr[zarrs]'
-# or
-pip install 'topozarr[zarrs]'
-```
-
-Remote stores keep zarr-python's pipeline by default; see [Tips](https://carbonplan.github.io/topozarr/tips/#faster-local-writes) to opt in.
 
 ### Example
 
@@ -50,15 +42,9 @@ import xarray as xr
 import xproj  # for CRS assignment
 from topozarr import create_pyramid
 
-# Load the air_temperature Xarray tutorial dataset
-ds = xr.tutorial.open_dataset('air_temperature').drop_encoding()
-
-# Assign a CRS
+ds = xr.tutorial.open_dataset("air_temperature").drop_encoding()
 ds = ds.proj.assign_crs(spatial_ref="EPSG:4326")
-print(ds)
-```
 
-```python
 pyramid = create_pyramid(
     ds,
     levels=2,
@@ -66,19 +52,12 @@ pyramid = create_pyramid(
     y_dim="lat",
     method="mean",  # "mean" (default) | "max" | "min" | "sum" | "nearest"
 )
-print(pyramid.encoding)
-
-# write
 pyramid.write("pyramid.zarr")
 ```
 
-`levels` is the total number of resolution levels, including the original. Level `0` is the original (highest) resolution; by default each subsequent level is coarsened by a factor of 2 per spatial dimension, so the last level is the coarsest. Pass `levels="auto"` to keep adding levels until the smaller spatial dim would drop below `min_dim` (default 256).
+`create_pyramid` is lazy; `write` does the work. `levels` counts all levels: `0` is the original resolution and each level after it is 2x coarser (see [Tuning](https://carbonplan.github.io/topozarr/tuning/) for `levels="auto"`).
 
-`create_pyramid` returns a write plan; `pyramid.write(store)` does the work.
-
-Not every dataset needs overviews! For lower resolution Zarr stores use
-`attach_geozarr_metadata` to add GeoZarr attrs and `recommend_encoding`
-for chunking/sharding heuristics for web mapping.
+Small datasets may not need overviews. Write a single-resolution store with GeoZarr attrs and web-friendly chunks:
 
 ```python
 from topozarr import attach_geozarr_metadata, recommend_encoding

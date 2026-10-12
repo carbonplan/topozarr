@@ -74,8 +74,8 @@ nav:
   - Tuning: tuning.md
   - Examples:
       - Categorical data: examples/categorical.md
-      - Regridding: examples/regrid.md
       - Icechunk and Dask: examples/icechunk-dask.md
+      - Regridding: examples/regrid.md
       - Virtual level 0: examples/hybrid-icechunk.md
   - Tips & caveats: tips.md
   - How it works: design.md

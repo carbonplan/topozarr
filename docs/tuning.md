@@ -1,14 +1,13 @@
 # Tuning
 
-The defaults work for most data. Code blocks on this page run on the `air_temperature` tutorial dataset when the docs are built.
+The defaults work for most data. Examples use the `air_temperature` tutorial dataset.
 
 | Knob | Where | Effect |
 |------|-------|--------|
 | [`levels` / `factors`](#level-counts) | `create_pyramid` | number of levels, or explicit downsample factors |
 | [`target_chunk_bytes`](#chunks-and-shards) | `create_pyramid` | chunk size on disk (default ~500 KB) |
 | [`chunks_per_shard`](#chunks-and-shards) | `create_pyramid` | shard size = work unit; `None` disables sharding |
-| [`max_workers`, `max_region_bytes`](tips.md#progress-and-memory) | `Pyramid.write` | threads and per-worker memory |
-| [`progress`](tips.md#progress-and-memory) | `Pyramid.write` | tqdm bar over written regions |
+| [`progress`, `max_workers`](tips.md#progress-and-memory) | `Pyramid.write` | progress bar, thread count and memory |
 
 ```python exec="on" source="above" session="tuning" result="text"
 import xarray as xr
@@ -50,7 +49,7 @@ print(dict(sparse.level_templates[1].sizes))
 | 8 | 64 | ~32 MB |
 | 16 | 256 | ~128 MB |
 
-Shard budget the spatial dims can't use (small rasters, coarse levels) widens non-spatial dims like `time`, up to 128 chunks per shard. Chunks along those dims stay 1, so a read still fetches one timestep:
+On small grids, leftover shard budget goes to non-spatial dims like `time` (chunks there stay 1):
 
 ```python exec="on" source="above" session="tuning" result="text"
 for cps in [1, 4, None]:
@@ -58,14 +57,18 @@ for cps in [1, 4, None]:
     print(f"chunks_per_shard={cps}: {enc['/0']['air']}")
 ```
 
-To override, edit `pyramid.encoding` before writing. Values are tuples in dimension order (`time, lat, lon`); here, 365 timesteps per shard on every level. Each shard must be a whole multiple of its chunk:
+??? note "Custom chunks and shards"
 
-```python exec="on" source="above" session="tuning" result="text"
-for level_encoding in pyramid.encoding.values():
-    _, *spatial = level_encoding["air"]["shards"]
-    level_encoding["air"]["shards"] = (365, *spatial)
-print(pyramid.encoding["/0"]["air"])
-```
+    Edit `pyramid.encoding` before writing. Values are tuples in dimension
+    order (`time, lat, lon`); each shard must be a whole multiple of its chunk.
+    Here, 365 timesteps per shard on every level:
+
+    ```python exec="on" source="above" session="tuning" result="text"
+    for level_encoding in pyramid.encoding.values():
+        _, *spatial = level_encoding["air"]["shards"]
+        level_encoding["air"]["shards"] = (365, *spatial)
+    print(pyramid.encoding["/0"]["air"])
+    ```
 
 ??? note "Rewrite some levels, and per-level timings"
 

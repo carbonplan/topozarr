@@ -1,6 +1,6 @@
 # Virtual level 0
 
-Keep the original files as level 0 and store only the overviews. [VirtualiZarr](https://virtualizarr.readthedocs.io) writes references to the NetCDF chunks into an [Icechunk](https://icechunk.io) repo as group `0`; `write` then reads that virtual level to build levels `1..N`. Everything here is local; on S3 the pattern is the same with S3 storage and an S3 virtual chunk container.
+Keep the original files as level 0 and store only the overviews. [VirtualiZarr](https://virtualizarr.readthedocs.io) writes chunk references into an [Icechunk](https://icechunk.io) repo as group `0`, and `write` builds levels `1..N` from it.
 
 ## A NetCDF source
 
@@ -64,8 +64,10 @@ session.commit("overviews")
 
 dt = xr.open_datatree(repo.readonly_session("main").store, engine="zarr", consolidated=False)
 for level in dt.children:
-    print(level, dict(dt[level].sizes), dt[level].attrs["proj:code"])
+        print(level, dict(dt[level].sizes), dt[level].attrs["proj:code"])
 ```
+
+On S3, use S3 storage and an S3 virtual chunk container; the steps are the same.
 
 ```python exec="on" session="hybrid"
 # hidden: remove the files this page wrote
