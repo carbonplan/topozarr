@@ -12,17 +12,22 @@ before anything is written:
   (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected, because each level is described
   by [one affine transform](geozarr.md#spatial).
 - **Spatial variables** can have at most four dimensions.
-- **Packed integers** (`scale_factor` / `add_offset`) stay packed in the output.
+- **Scaled integers** (stored as integers with a `scale_factor` / `add_offset`)
+  are written as integers, even if you opened them as floats.
 
 If you need a different grid, reproject or regrid first, then pass the result to `create_pyramid` (see the [regridding example](examples/regrid.md)).
 
-??? note "Packed and masked integer details"
+??? note "Scaled and masked integer details"
 
-    Packed input is written packed whether it was opened decoded or with
-    `mask_and_scale=False`; decoded input is re-packed to its stored dtype.
-    Packed input without a `_FillValue`, `_Unsigned` variables, and masked-only
-    integers (for example, WorldCover `uint8`) are written as floats. Open them with
-    `mask_and_scale=False` to keep the integer dtype.
+    CF calls these packed variables. Xarray decodes them to floats on open,
+    which can make them 4x larger, so `create_pyramid` converts them back to
+    their stored integer dtype. Opening them with `mask_and_scale=False` keeps
+    them as integers from the start.
+
+    Three cases are written as floats: scaled integers without a `_FillValue`,
+    `_Unsigned` variables, and integers that only have a `_FillValue` (for
+    example, WorldCover `uint8`). Open these with `mask_and_scale=False` to
+    keep the integer dtype.
 
 ## Progress and memory
 
@@ -38,7 +43,7 @@ See [How it works](design.md#write-path) for how tiles are chosen.
 
 ## Dask distributed
 
-`Pyramid.write` uses a local thread pool, not Dask. To write with a Dask cluster, call `pyramid.as_datatree()` and pass `pyramid.encoding` to `to_zarr` (see the [Dask example](examples/icechunk-dask.md#write-with-dask)). If `to_zarr` raises a `safe_chunks` error, pass `align_chunks=True`.
+`Pyramid.write` uses a local thread pool, not Dask. To write with a Dask cluster, call `pyramid.as_datatree()` and pass `pyramid.encoding` to `to_zarr` (see the [Dask example](examples/dask.md)). If `to_zarr` raises a `safe_chunks` error, pass `align_chunks=True`.
 
 ## Faster local writes
 

@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.2.0
 
 ### Changed
 
@@ -8,9 +8,13 @@
   so a window averaging 5.75 gives 6, not 5. Existing integer stores differ by
   up to one unit; don't append new levels (`mode="a"`) to a store written by
   an older version.
-- CF-packed input (`scale_factor` / `add_offset` with a `_FillValue`) is
-  written in its packed integer dtype whether opened decoded or with
-  `mask_and_scale=False`. `as_datatree` returns it packed too.
+- Scaled integer input (CF packed data: `scale_factor` / `add_offset` with a
+  `_FillValue`) is written in its stored integer dtype, whether you opened it
+  as floats or with `mask_and_scale=False`. `as_datatree` returns it as
+  integers too.
+- Shards along non-spatial dimensions (like `time`) line up with the source
+  chunks on every level. Coarser levels used to divide those sizes by the
+  level factor too, or skip the alignment.
 
 ### Added
 
@@ -19,8 +23,10 @@
 
 ### Fixed
 
-- A packed `_FillValue` is no longer used as the missing marker on decoded
-  floats, which dropped real values that decoded to it.
+- The integer `_FillValue` of scaled data is no longer used as the missing
+  marker on decoded floats, which dropped real values that decoded to it.
+- Levels kept during a partial rewrite (`mode="a"`) now get the proj attrs
+  too.
 
 ## 0.1.11
 

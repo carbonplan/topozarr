@@ -156,7 +156,7 @@ pyramid = create_pyramid(
 )
 ```
 
-Next, see [Tuning](tuning.md) for level counts and chunk sizes, or the [examples](examples/categorical.md) for categorical data, regridding, Icechunk, and Dask.
+Next, see [Tuning](tuning.md) for level counts and chunk sizes, or the [examples](examples/categorical.md) for categorical data, regridding, hybrid Icechunk stores, and Dask.
 
 ```python exec="on" session="usage"
 # hidden: remove the stores this page wrote
