@@ -79,7 +79,7 @@ nav:
       - Tips and caveats: tips.md
   - Examples:
       - Categorical data: examples/categorical.md
-      - Icechunk and Dask: examples/icechunk-dask.md
+      - Dask: examples/dask.md
       - Regridding: examples/regrid.md
       - Hybrid stores: examples/hybrid-icechunk.md
   - Concepts:
