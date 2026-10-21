@@ -394,7 +394,8 @@ class Pyramid:
                 )
         # root attrs are replaced by the plan's, so mode="a" must not drop or
         # contradict levels the store already advertises
-        stored_layout = root.attrs.get("multiscales", {}).get("layout", [])
+        multiscales = cast(dict[str, Any], root.attrs.get("multiscales", {}))
+        stored_layout: list[dict[str, Any]] = multiscales.get("layout", [])
         plan_layout = {e["asset"]: e for e in self.attrs["multiscales"]["layout"]}
         keys = ("derived_from", "resampling_method", "spatial:shape")
         for entry in stored_layout:
