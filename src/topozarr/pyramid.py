@@ -274,7 +274,9 @@ class Pyramid:
                 writing a subset of levels so the root group and any
                 pre-existing levels are preserved; ``"w"`` with a levels
                 subset raises if the store already holds data (truncation
-                would delete the levels not being rewritten).
+                would delete the levels not being rewritten). With ``"a"``,
+                levels the store already lists must match this pyramid's
+                layout (resampling method, shape); otherwise this raises.
             max_workers: Thread pool size for tile/region processing. ``None``
                 derives a default from the CPU count and available memory
                 (peak memory is roughly ``max_workers * 5 * region_bytes``).
@@ -283,7 +285,8 @@ class Pyramid:
             levels: Subset of levels to write (e.g. ``[1, 2]``).
                 Defaults to all levels. Each coarsened level reads its
                 predecessor, so level ``N > 0`` must have level ``N - 1``
-                either in the subset or already present in the store.
+                either in the subset or already present in the store. An
+                empty subset raises.
             max_region_bytes: Memory budget per level-0 tile. Tiles are
                 widened to cover whole source chunks when that fits the
                 budget, so each source chunk is read once.
@@ -324,6 +327,11 @@ class Pyramid:
         write_levels = (
             list(range(self.levels)) if levels is None else sorted(set(levels))
         )
+        if not write_levels:
+            raise ValueError(
+                f"no levels to write (levels={levels!r}, pyramid has {self.levels}); "
+                "with levels='auto', the raster may be smaller than 2 * min_dim"
+            )
         coarsened_vars = self._coarsened_vars()
 
         if mode == "w" and set(write_levels) != set(self.level_templates):
@@ -383,6 +391,21 @@ class Pyramid:
                     f"neither in the write plan nor in the store (missing "
                     f"arrays: {missing}); include level {lvl - 1} in 'levels' "
                     "or write it first"
+                )
+        # root attrs are replaced by the plan's, so mode="a" must not drop or
+        # contradict levels the store already advertises
+        multiscales = cast(dict[str, Any], root.attrs.get("multiscales", {}))
+        stored_layout: list[dict[str, Any]] = multiscales.get("layout", [])
+        plan_layout = {e["asset"]: e for e in self.attrs["multiscales"]["layout"]}
+        keys = ("derived_from", "resampling_method", "spatial:shape")
+        for entry in stored_layout:
+            planned = plan_layout.get(entry["asset"])
+            if planned is None or any(entry.get(k) != planned.get(k) for k in keys):
+                raise ValueError(
+                    f"store level {entry['asset']} does not match this pyramid "
+                    f"(store has {len(stored_layout)} levels, pyramid has "
+                    f"{self.levels}); create the pyramid with matching settings, "
+                    "or pass mode='w' to rebuild the store"
                 )
         root.attrs.update(self.attrs)
         # levels kept from the store (e.g. a virtual level 0) get the CRS too

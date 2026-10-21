@@ -223,13 +223,41 @@ def test_write_negative_level_raises(create_dataset):
         pyramid.write(zarr.storage.MemoryStore(), levels=[-1])
 
 
-def test_write_empty_levels_is_noop(create_dataset):
-    pyramid = create_pyramid(create_dataset(), levels=2)
+def test_write_empty_levels_raises(create_dataset):
+    ds = create_dataset()
     store = zarr.storage.MemoryStore()
-    pyramid.write(store, levels=[])
+    create_pyramid(ds, levels=3).write(store)
+    before = zarr.open_group(store, mode="r").attrs.asdict()
 
-    root = zarr.open_group(store, mode="r")
-    assert list(root.keys()) == []
+    with pytest.raises(ValueError, match="no levels to write"):
+        create_pyramid(ds, levels=1).write(store, mode="a", levels=[])
+
+    assert zarr.open_group(store, mode="r").attrs.asdict() == before
+
+
+@pytest.mark.parametrize(
+    "plan_kwargs", [{"levels": 2}, {"levels": 3, "method": "nearest"}]
+)
+def test_write_append_mismatched_layout_raises(create_dataset, plan_kwargs):
+    ds = create_dataset()
+    store = zarr.storage.MemoryStore()
+    create_pyramid(ds, levels=3, method="mean").write(store)
+    before = zarr.open_group(store, mode="r").attrs.asdict()
+
+    with pytest.raises(ValueError, match="does not match this pyramid"):
+        create_pyramid(ds, **plan_kwargs).write(store, mode="a", levels=[1])
+
+    assert zarr.open_group(store, mode="r").attrs.asdict() == before
+
+
+def test_write_append_extends_pyramid(create_dataset):
+    ds = create_dataset()
+    store = zarr.storage.MemoryStore()
+    create_pyramid(ds, levels=2).write(store)
+    create_pyramid(ds, levels=3).write(store, mode="a", levels=[2])
+
+    layout = zarr.open_group(store, mode="r").attrs["multiscales"]["layout"]
+    assert [e["asset"] for e in layout] == ["0", "1", "2"]
 
 
 def test_write_levels_missing_predecessor_raises(create_dataset):

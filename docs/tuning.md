@@ -81,7 +81,9 @@ for cps in [1, 4, None]:
 ??? note "Rewrite some levels and get per-level timings"
 
     `levels=[...]` with `mode="a"` rewrites a subset of levels and keeps the
-    rest. Level `N - 1` must be in the subset or already in the store.
+    rest. Level `N - 1` must be in the subset or already in the store, and
+    the pyramid must match the levels the store already lists (same method
+    and shapes, at least as many levels).
     `stats=True` returns timings for each level.
 
     ```python
