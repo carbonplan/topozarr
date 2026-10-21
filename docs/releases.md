@@ -1,5 +1,18 @@
 # Release notes
 
+## 0.2.1
+
+### Changed
+
+- `Pyramid.write` raises when there is nothing to write (`levels=[]`, or a
+  `levels="auto"` plan that resolves to only level 0 and isn't asked to write
+  it). It used to return quietly after rewriting the root metadata, dropping
+  the store's existing overviews from `multiscales`.
+- `write(mode="a")` raises if the store already lists a level the pyramid
+  doesn't have, or one built with a different resampling method or shape.
+  Use matching `create_pyramid` settings, or `mode="w"` to rebuild. Adding
+  levels on top of an existing pyramid still works.
+
 ## 0.2.0
 
 ### Changed
