@@ -292,8 +292,19 @@ def test_write_levels_tags_kept_level_with_crs(create_dataset):
     ds.drop_vars("spatial_ref").to_zarr(
         store, group="0", zarr_format=3, consolidated=False
     )
+    zarr.open_group(store, path="0").attrs.update(
+        {
+            "multiscales": {"layout": []},
+            "spatial:bbox": [0, 0, 1, 1],
+            "proj:projjson": {},
+        }
+    )
     pyramid.write(store, mode="a", levels=[1])
-    assert zarr.open_group(store, path="0").attrs["proj:code"] == "EPSG:4326"
+    attrs = zarr.open_group(store, path="0").attrs
+    assert attrs["proj:code"] == "EPSG:4326"
+    layout0 = pyramid.attrs["multiscales"]["layout"][0]
+    assert attrs["spatial:transform"] == layout0["spatial:transform"]
+    assert not {"multiscales", "spatial:bbox", "proj:projjson"} & set(attrs)
 
 
 def test_write_subset_mode_w_existing_store_raises(create_dataset):
@@ -909,3 +920,24 @@ def test_cf_unsigned_is_not_repacked():
         "_Unsigned": "true",
     }
     assert _repack(da) is da
+
+
+def test_levels_drop_stale_root_geozarr_attrs(create_dataset):
+    ds = create_dataset(nx=16, ny=16)
+    stale = {"spatial:transform": [1.0, 0, 0, 0, -1.0, 0], "spatial:shape": [16, 16]}
+    ds.attrs.update(stale, multiscales={"layout": []}, title="keep")
+    pyramid = create_pyramid(ds, levels=3)
+    assert ds.attrs["spatial:shape"] == [16, 16]  # caller's attrs untouched
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+
+    root = zarr.open_group(store, mode="r")
+    layout = root.attrs["multiscales"]["layout"]
+    assert root.attrs["spatial:shape"] == [16, 16]
+    assert layout[2]["spatial:shape"] == [4, 4]
+    for attrs in [root["2"].attrs, pyramid.as_datatree()["2"].attrs]:
+        assert attrs["spatial:transform"] == layout[2]["spatial:transform"]
+        assert attrs["spatial:shape"] == [4, 4]
+        assert [c["name"] for c in attrs["zarr_conventions"]] == ["proj", "spatial"]
+        assert "multiscales" not in attrs
+        assert attrs["title"] == "keep"

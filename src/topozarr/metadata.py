@@ -431,12 +431,28 @@ def _get_spatial_bbox(
     return [xmin, ymin, xmax, ymax]
 
 
-def level_proj_attrs(crs: str) -> dict[str, Any]:
-    """proj attrs for a level group: proj applies only to direct child arrays."""
+GEOZARR_ATTR_PREFIXES = (
+    "spatial:",
+    "proj:",
+    "multiscales",
+    "zarr_conventions",
+    "zarr-layer",
+)
+
+
+def strip_geozarr_attrs(attrs: dict[str, Any]) -> dict[str, Any]:
+    """Drop GeoZarr attrs (e.g. from a prior ETL) so they can be rebuilt fresh."""
+    return {k: v for k, v in attrs.items() if not k.startswith(GEOZARR_ATTR_PREFIXES)}
+
+
+def level_group_attrs(root_attrs: dict[str, Any], level: int) -> dict[str, Any]:
+    """proj + spatial attrs for a level group, from its root layout entry."""
+    entry = root_attrs["multiscales"]["layout"][level]
+    shared = ("proj:code", "proj:wkt2", "spatial:dimensions", "spatial:registration")
     return {
-        "zarr_conventions": [PROJ_CONVENTION.attrs],
-        "proj:code": crs,
-        "proj:wkt2": CRS.from_user_input(crs).to_wkt(),
+        "zarr_conventions": [PROJ_CONVENTION.attrs, SPATIAL_CONVENTION.attrs],
+        **{k: root_attrs[k] for k in shared},
+        **{k: entry[k] for k in ("spatial:transform", "spatial:shape")},
     }
 
 
@@ -451,8 +467,9 @@ def _geozarr_attrs(
 ) -> dict[str, Any]:
     """proj + spatial attr block, shared by the flat and multiscale roots."""
     return {
-        **level_proj_attrs(crs),
         "zarr_conventions": [c.attrs for c in conventions],
+        "proj:code": crs,
+        "proj:wkt2": CRS.from_user_input(crs).to_wkt(),
         "spatial:dimensions": [y_dim, x_dim],
         "spatial:registration": "pixel",
         "spatial:transform": transform,

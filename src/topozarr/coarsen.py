@@ -18,6 +18,7 @@ from .metadata import (
     create_multiscale_metadata,
     get_crs,
     recommend_encoding,
+    strip_geozarr_attrs,
     validate_spatial_dims,
 )
 from .pyramid import CoarseningMethod, Pyramid, validate_method
@@ -321,6 +322,8 @@ def create_pyramid(
                 f"ds.drop_vars([{str(name)!r}])"
             )
     ds = ds.assign({name: _repack(da) for name, da in ds.data_vars.items()})
+    # root-only geozarr attrs (e.g. from a prior ETL) would go stale on every level
+    ds.attrs = strip_geozarr_attrs(ds.attrs)
     crs_str = get_crs(ds)
     level_templates = build_level_templates(ds, factors, x_dim, y_dim)
 
