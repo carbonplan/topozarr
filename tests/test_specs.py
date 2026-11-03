@@ -7,7 +7,7 @@ import xarray as xr
 import zarr
 
 from topozarr.coarsen import create_pyramid
-from topozarr.metadata import ALL_CONVENTIONS, PROJ_CONVENTION
+from topozarr.metadata import ALL_CONVENTIONS, PROJ_CONVENTION, SPATIAL_CONVENTION
 
 
 @pytest.mark.parametrize("method", ["mean", "max", "min", "sum", "nearest"])
@@ -262,17 +262,25 @@ def test_conventions_entries_match_schema_consts(create_dataset, case, tmp_path)
 @pytest.mark.parametrize(
     "case", CONFORMANCE_CASES.values(), ids=CONFORMANCE_CASES.keys()
 )
-def test_level_groups_carry_proj(create_dataset, case, tmp_path):
-    """proj applies only to direct child arrays, so each level group declares it."""
+def test_level_groups_carry_proj_and_spatial(create_dataset, case, tmp_path):
+    """proj/spatial apply only to direct child arrays, so each level group declares them."""
     pyramid = _build_case_pyramid(create_dataset, case)
     nodes = _nodes(pyramid, tmp_path)
-    schema = jsonschema.Draft7Validator(_schema(PROJ_CONVENTION))
-    root_crs = nodes["/"]["attributes"]["proj:code"]
+    schemas = [
+        jsonschema.Draft7Validator(_schema(c))
+        for c in (PROJ_CONVENTION, SPATIAL_CONVENTION)
+    ]
+    root = nodes["/"]["attributes"]
     for path, node in nodes.items():
         if path == "/":
             continue
-        assert node["attributes"]["proj:code"] == root_crs
-        assert not list(schema.iter_errors(node)), path
+        attrs = node["attributes"]
+        entry = root["multiscales"]["layout"][int(path)]
+        assert attrs["proj:code"] == root["proj:code"]
+        assert attrs["spatial:transform"] == entry["spatial:transform"]
+        assert attrs["spatial:shape"] == entry["spatial:shape"]
+        for schema in schemas:
+            assert not list(schema.iter_errors(node)), path
 
 
 def test_datatree_level_groups_carry_proj(create_dataset):

@@ -11,7 +11,9 @@ the data and pick a resolution without reading any coordinate arrays.
 </div>
 
 In the store, the root group describes the whole pyramid. Each level group
-repeats `proj:code`, `proj:wkt2`, and `zarr_conventions`. The figure shows only
+repeats `proj:code`, `proj:wkt2`, `spatial:dimensions`, `spatial:registration`,
+and `zarr_conventions`, and carries its own `spatial:transform` and
+`spatial:shape` from the layout. The figure shows only
 the key attributes. The root also carries `proj:wkt2`, `spatial:transform`,
 `spatial:shape`, and `spatial:registration`.
 

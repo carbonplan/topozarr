@@ -27,7 +27,7 @@ from .engine import (
     downsample_level,
     write_tiles,
 )
-from .metadata import level_proj_attrs
+from .metadata import level_group_attrs, strip_geozarr_attrs
 
 CoarseningMethod = Literal["mean", "max", "min", "sum", "nearest"]
 
@@ -411,7 +411,9 @@ class Pyramid:
         # levels kept from the store (e.g. a virtual level 0) get the CRS too
         for lvl in set(self.level_templates) - write_levels_set:
             if str(lvl) in root:
-                root[str(lvl)].attrs.update(level_proj_attrs(self.attrs["proj:code"]))
+                # drop root-only keys a prior GeoZarr ETL may have left on the level
+                kept = strip_geozarr_attrs(dict(root[str(lvl)].attrs))
+                root[str(lvl)].attrs.put({**kept, **level_group_attrs(self.attrs, lvl)})
 
         all_stats: dict[str, Any] = {}
         pipeline = _codec_pipeline(store)
@@ -440,7 +442,7 @@ class Pyramid:
                         if name in side.variables
                     },
                 )
-                root[str(lvl)].attrs.update(level_proj_attrs(self.attrs["proj:code"]))
+                root[str(lvl)].attrs.update(level_group_attrs(self.attrs, lvl))
                 if not coarsened_vars:
                     continue
                 level_group = cast(zarr.Group, root[str(lvl)])
@@ -715,9 +717,10 @@ class Pyramid:
         ds_chain = self._coarsen_chain()
 
         root_ds = xr.Dataset(attrs=self.attrs)
-        proj = level_proj_attrs(self.attrs["proj:code"])
         children = {
-            str(lvl): xr.DataTree(ds_chain[lvl].assign_attrs(proj))
+            str(lvl): xr.DataTree(
+                ds_chain[lvl].assign_attrs(level_group_attrs(self.attrs, lvl))
+            )
             for lvl in range(self.levels)
         }
         return xr.DataTree(root_ds, children=children)
