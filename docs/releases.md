@@ -2,6 +2,7 @@
 
 ## 0.2.2
 
+
 ### Changed
 
 - Each level group now carries its own `spatial:transform` and
