@@ -1,5 +1,19 @@
 # Release notes
 
+## 0.2.2
+
+
+### Changed
+
+- Each level group now carries its own `spatial:transform` and
+  `spatial:shape` (matching its `multiscales` layout entry), along with
+  `proj:code`, `proj:wkt2`, `spatial:dimensions` and `spatial:registration`.
+  Readers can place any level without going back to the root.
+- GeoZarr attrs already on the input (`proj:*`, `spatial:*`, `multiscales`,
+  `zarr_conventions`, `zarr-layer`), e.g. from a prior GeoZarr ETL, are
+  dropped and rebuilt, so they no longer leak stale values onto every level.
+  The same goes for a level kept from the store with `write(mode="a")`.
+
 ## 0.2.1
 
 ### Changed
@@ -12,14 +26,6 @@
   doesn't have, or one built with a different resampling method or shape.
   Use matching `create_pyramid` settings, or `mode="w"` to rebuild. Adding
   levels on top of an existing pyramid still works.
-- Each level group now carries its own `spatial:transform` and
-  `spatial:shape` (matching its `multiscales` layout entry), along with
-  `proj:code`, `proj:wkt2`, `spatial:dimensions` and `spatial:registration`.
-  Readers can place any level without going back to the root.
-- GeoZarr attrs already on the input (`proj:*`, `spatial:*`, `multiscales`,
-  `zarr_conventions`, `zarr-layer`), e.g. from a prior GeoZarr ETL, are
-  dropped and rebuilt, so they no longer leak stale values onto every level.
-  The same goes for a level kept from the store with `write(mode="a")`.
 
 ## 0.2.0
 
