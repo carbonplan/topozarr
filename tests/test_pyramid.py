@@ -415,12 +415,20 @@ def test_single_value_coord_raises(create_dataset):
         create_pyramid(ds, levels=1)
 
 
-def test_spatial_var_ndim_limit(create_dataset):
-    ds = create_dataset()
-    ds["stacked"] = ds.elevation.expand_dims(a=2, b=2, c=2)
+def test_spatial_var_over_4d_writes(create_dataset):
+    # shape from issue #58
+    ds = create_dataset(
+        nx=128, ny=64, extra_dims={"scenario": 2, "time_horizon": 3, "quantile": 2}
+    )
+    store = zarr.storage.MemoryStore()
+    create_pyramid(ds, levels=3).write(store)
+    dt = xr.open_datatree(store, engine="zarr", consolidated=False)
 
-    with pytest.raises(ValueError, match="supports at most 4"):
-        create_pyramid(ds, levels=2)
+    assert dt["2"].ds.elevation.shape == (2, 3, 2, 16, 32)
+    want = ds.coarsen(x=2, y=2, boundary="trim").mean()
+    np.testing.assert_allclose(
+        dt["1"].ds.elevation.values, want.elevation.values, rtol=1e-6
+    )
 
 
 def test_no_spatial_variables_raises(create_dataset):
@@ -839,15 +847,18 @@ def test_non_numeric_var_over_spatial_dim_raises(create_dataset):
         create_pyramid(ds, levels=2)
 
 
-def test_partly_spatial_var_over_kernel_ndim_limit_raises(create_dataset):
+def test_partly_spatial_var_over_4d_writes(create_dataset):
     ds = create_dataset(nx=16, ny=16)
     ds["profile"] = (
         ("time", "band", "level", "run", "x"),
-        np.zeros((2, 2, 2, 2, 16), dtype="f4"),
+        np.random.rand(2, 2, 2, 2, 16).astype("f4"),
     )
+    store = zarr.storage.MemoryStore()
+    create_pyramid(ds, levels=2).write(store)
+    dt = xr.open_datatree(store, engine="zarr", consolidated=False)
 
-    with pytest.raises(ValueError, match="topozarr-core supports at most 4"):
-        create_pyramid(ds, levels=2)
+    want = ds.profile.coarsen(x=2, boundary="trim").mean()
+    np.testing.assert_allclose(dt["1"].ds.profile.values, want.values, rtol=1e-6)
 
 
 @pytest.mark.parametrize(

@@ -4,6 +4,9 @@ import numpy as np
 import pytest
 import xarray as xr
 import zarr
+from hypothesis import given, settings
+from hypothesis import strategies as st
+from hypothesis.extra import numpy as hnp
 from topozarr_core import METHODS, block_reduce
 
 from topozarr.coarsen import create_pyramid
@@ -25,14 +28,24 @@ def test_xr_methods_are_kernel_methods():
 
 def _xr_reference(a: np.ndarray, stride: tuple[int, ...], method: str) -> np.ndarray:
     dims = [f"d{i}" for i in range(a.ndim)]
-    windows = {d: s for d, s in zip(dims, stride) if s > 1}
+    windows = dict(zip(dims, stride))
     da = xr.DataArray(a, dims=dims)
     return getattr(da.coarsen(windows, boundary="trim"), method)().values
 
 
 @pytest.mark.parametrize("method", XR_METHODS)
 @pytest.mark.parametrize(
-    "shape", [(8, 8), (101, 100), (7, 5), (3,), (2, 16, 17), (2, 3, 8, 8)]
+    "shape",
+    [
+        (8, 8),
+        (101, 100),
+        (7, 5),
+        (3,),
+        (2, 16, 17),
+        (2, 3, 8, 8),
+        (2, 3, 2, 8, 8),
+        (2, 1, 2, 5, 9, 10),
+    ],
 )
 def test_block_reduce_matches_xarray_float(method, shape):
     rng = np.random.default_rng(42)
@@ -123,7 +136,17 @@ def _nearest_reference(a: np.ndarray, stride: tuple[int, ...]) -> np.ndarray:
 
 
 @pytest.mark.parametrize(
-    "shape", [(8, 8), (101, 100), (7, 5), (3,), (2, 16, 17), (2, 3, 8, 8)]
+    "shape",
+    [
+        (8, 8),
+        (101, 100),
+        (7, 5),
+        (3,),
+        (2, 16, 17),
+        (2, 3, 8, 8),
+        (2, 3, 2, 8, 8),
+        (2, 1, 2, 5, 9, 10),
+    ],
 )
 def test_block_reduce_nearest_matches_strided(shape):
     rng = np.random.default_rng(42)
@@ -432,3 +455,81 @@ def test_pyramid_write_icechunk(create_dataset, tmp_path):
         ds.coarsen(x=2, y=2, boundary="trim").mean().elevation.values,
         rtol=1e-6,
     )
+
+
+def test_block_reduce_rejects_0d():
+    with pytest.raises(ValueError, match="at least 1 dimension"):
+        block_reduce(np.array(1.0), [], "mean")
+
+
+@st.composite
+def nd_arrays_and_strides(draw):
+    """1-D to 6-D float arrays with NaNs and a stride per axis (<= extent).
+
+    Strides > 1 on leading axes push the kernel off its row fast path.
+    """
+    dtype = draw(st.sampled_from(["f4", "f8"]))
+    shape = draw(hnp.array_shapes(min_dims=1, max_dims=6, min_side=1, max_side=9))
+    elems = st.floats(-1e3, 1e3, width=32) | st.just(float("nan"))
+    a = draw(hnp.arrays(dtype, shape, elements=elems))
+    stride = tuple(draw(st.integers(1, min(n, 4))) for n in shape)
+    return a, stride
+
+
+@settings(deadline=None, max_examples=300)
+@given(case=nd_arrays_and_strides(), method=st.sampled_from(XR_METHODS))
+def test_block_reduce_matches_xarray_nd(case, method):
+    a, stride = case
+    got = block_reduce(a, stride, method)
+    assert got.dtype == a.dtype
+    rtol = 1e-5 if a.dtype == np.float32 else 1e-12
+    np.testing.assert_allclose(
+        got, _xr_reference(a, stride, method), rtol=rtol, atol=1e-3, equal_nan=True
+    )
+    np.testing.assert_array_equal(
+        block_reduce(a, stride, "nearest"), _nearest_reference(a, stride)
+    )
+
+
+@st.composite
+def nd_spatial_datasets(draw):
+    """5-D/6-D spatial datasets with random values and NaNs."""
+    names = draw(
+        st.lists(
+            st.sampled_from(["time", "band", "z", "scenario", "quantile"]),
+            min_size=3,
+            max_size=4,
+            unique=True,
+        )
+    )
+    extras = {n: draw(st.integers(1, 3)) for n in names}
+    ny, nx = draw(st.integers(8, 20)), draw(st.integers(8, 20))
+    shape = (*extras.values(), ny, nx)
+    rng = np.random.default_rng(draw(st.integers(0, 2**32 - 1)))
+    values = rng.random(shape).astype("f4")
+    values[rng.random(shape) < 0.1] = np.nan
+    ds = xr.Dataset(
+        {"v": ((*extras, "y", "x"), values)},
+        coords={"x": np.arange(nx, dtype="f8"), "y": np.arange(ny, dtype="f8")},
+    )
+    return ds.proj.assign_crs(spatial_ref="EPSG:4326")
+
+
+@settings(deadline=None, max_examples=30)
+@given(
+    ds=nd_spatial_datasets(),
+    levels=st.integers(1, 3),
+    method=st.sampled_from(XR_METHODS),
+)
+def test_pyramid_nd_parity(ds, levels, method):
+    """Written >4-D levels match stepwise coarsen(boundary='trim')."""
+    store = zarr.storage.MemoryStore()
+    create_pyramid(ds, levels=levels, method=method).write(store)
+    dt = xr.open_datatree(store, engine="zarr", consolidated=False)
+
+    ref = ds
+    for lvl in range(levels):
+        got = dt[str(lvl)].ds.v
+        assert got.dims == ds.v.dims
+        np.testing.assert_allclose(got.values, ref.v.values, rtol=1e-5, equal_nan=True)
+        ref = getattr(ref.coarsen(x=2, y=2, boundary="trim"), method)()

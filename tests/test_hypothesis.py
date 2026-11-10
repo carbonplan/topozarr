@@ -9,7 +9,7 @@ from topozarr import attach_geozarr_metadata, recommend_encoding
 from topozarr.coarsen import create_pyramid
 
 spatial_names = st.sampled_from(["x", "y", "lon", "lat", "X", "Y"])
-extra_names = st.sampled_from(["time", "band", "z"])
+extra_names = st.sampled_from(["time", "band", "z", "scenario", "quantile"])
 
 
 @st.composite
@@ -18,7 +18,7 @@ def heterogeneous_datasets(draw):
     y_n = draw(spatial_names.filter(lambda x: x != x_n))
     nx, ny = draw(st.integers(1, 10)), draw(st.integers(1, 10))
 
-    extras = draw(st.dictionaries(extra_names, st.integers(1, 3), max_size=2))
+    extras = draw(st.dictionaries(extra_names, st.integers(1, 3), max_size=4))
 
     all_dims = list(extras.keys()) + [y_n, x_n]
     shape = tuple(list(extras.values()) + [ny, nx])

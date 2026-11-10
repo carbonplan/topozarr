@@ -11,7 +11,8 @@ before anything is written:
 - **Spatial coordinates must be 1-D** and uniformly spaced. Curvilinear grids
   (a 2-D `lat(y, x)` / `lon(y, x)`) are rejected, because each level is described
   by [one affine transform](geozarr.md#spatial).
-- **Spatial variables** can have at most four dimensions.
+- **Other dimensions** (`time`, `band`, ...) can be any number. Only Y and X
+  are coarsened.
 - **Scaled integers** (stored as integers with a `scale_factor` / `add_offset`)
   are written as integers, even if you opened them as floats.
 
