@@ -1,5 +1,20 @@
 # Release notes
 
+## Unreleased
+
+### Added
+
+- `Pyramid.summary()` is a dry run of `write`. It reports per-level array
+  shapes, chunks, shards, stored object counts, and uncompressed bytes, plus
+  the tile pass level `tile_k`, worker counts, region shapes, and estimated
+  peak memory. It reads no data, and `write` now plans from it.
+
+### Fixed
+
+- `Pyramid.write` now applies `compressors`, `filters`, and `serializer` set
+  in `pyramid.encoding`. It used to silently drop them and use zarr's
+  defaults; only the `as_datatree().to_zarr()` path honored them.
+
 ## 0.2.2
 
 

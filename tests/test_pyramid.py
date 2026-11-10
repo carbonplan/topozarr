@@ -1,4 +1,6 @@
 # test_pyramid.py
+import math
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -207,6 +209,72 @@ def test_write_stats(create_dataset):
 
     # default stats=False returns None
     assert pyramid.write(zarr.storage.MemoryStore()) is None
+
+
+# small regions force tile_k=0 + per-level passes; defaults fold all levels into the tile pass
+@pytest.mark.parametrize(
+    ("kw", "tile_k"),
+    [({"max_region_bytes": 4096, "max_workers": 2}, 0), ({"max_workers": 1}, 3)],
+)
+def test_summary_matches_write_stats(create_dataset, kw, tile_k):
+    ds = create_dataset(nx=64, ny=64)
+    ds["slope"] = ds.elevation * 2
+    pyramid = create_pyramid(ds, levels=4, target_chunk_bytes=256, chunks_per_shard=2)
+    plan = pyramid.summary(**kw)
+    stats = pyramid.write(zarr.storage.MemoryStore(), stats=True, **kw)
+
+    assert plan["tile_k"] == tile_k
+    passes = {k: v for k, v in plan["levels"].items() if "workers" in v}
+    assert set(passes) == set(stats)
+    assert str(plan["tile_k"]) in passes
+    for lvl, entry in passes.items():
+        assert entry["workers"] == stats[lvl]["workers"]
+        assert entry["region_shapes"] == stats[lvl]["region_shapes"]
+        assert entry["regions"] == stats[lvl]["regions"]
+        assert entry["est_peak_bytes"] > 0
+
+    level0 = plan["levels"]["0"]["arrays"]["elevation"]
+    assert level0["shape"] == (64, 64)
+    assert level0["nbytes"] == 64 * 64 * 4
+
+
+def test_summary_objects_unsharded(create_dataset):
+    pyramid = create_pyramid(
+        create_dataset(nx=32, ny=32),
+        levels=2,
+        target_chunk_bytes=256,
+        chunks_per_shard=None,
+    )
+    for lvl, entry in pyramid.summary()["levels"].items():
+        arr = entry["arrays"]["elevation"]
+        assert arr["shards"] is None
+        expected = math.prod(
+            math.ceil(n / c) for n, c in zip(arr["shape"], arr["chunks"])
+        )
+        assert arr["objects"] == expected
+
+
+def test_write_honors_compressors(create_dataset):
+    from zarr.codecs import ZstdCodec
+
+    ds = create_dataset(nx=16, ny=16)
+    ds["slope"] = ds.elevation * 2
+    pyramid = create_pyramid(ds, levels=2)
+    for lvl in ("/0", "/1"):
+        pyramid.encoding[lvl]["elevation"]["compressors"] = [ZstdCodec(level=5)]
+    store = zarr.storage.MemoryStore()
+    pyramid.write(store)
+
+    root = zarr.open_group(store, mode="r")
+    for lvl in ("0", "1"):
+        assert root[f"{lvl}/elevation"].compressors == (ZstdCodec(level=5),)
+        assert root[f"{lvl}/slope"].compressors != (ZstdCodec(level=5),)
+
+
+def test_summary_rejects_zero_workers(create_dataset):
+    pyramid = create_pyramid(create_dataset(), levels=2)
+    with pytest.raises(ValueError, match="max_workers"):
+        pyramid.write(zarr.storage.MemoryStore(), max_workers=0)
 
 
 def test_write_invalid_levels(create_dataset):

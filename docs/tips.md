@@ -41,6 +41,29 @@ pyramid.write("pyramid.zarr", progress=True)
 
 See [How it works](design.md#write-path) for how tiles are chosen.
 
+## Planning a large write
+
+Call `summary` before a big write to see what `write` will do without reading any data. It takes the same `levels`, `max_region_bytes`, and `max_workers` arguments:
+
+```python
+plan = pyramid.summary()
+plan["levels"]["0"]["arrays"]["elevation"]  # shape, chunks, shards, objects, nbytes
+max(v["est_peak_bytes"] for v in plan["levels"].values() if "est_peak_bytes" in v)
+```
+
+`objects` counts the stored objects per level (shards, or chunks when unsharded), so it flags a level that would write millions of small objects. `est_peak_bytes` helps size a machine before you launch one.
+
+## Compression
+
+`write` uses zarr's default codecs. To change them for one variable, set `compressors`, `filters`, or `serializer` on its entry in `pyramid.encoding`, for each level you want to change:
+
+```python
+from zarr.codecs import ZstdCodec
+
+for path in pyramid.encoding:
+    pyramid.encoding[path]["elevation"]["compressors"] = [ZstdCodec(level=5)]
+```
+
 ## Dask distributed
 
 `Pyramid.write` uses a local thread pool, not Dask. To write with a Dask cluster, call `pyramid.as_datatree()` and pass `pyramid.encoding` to `to_zarr` (see the [Dask example](examples/dask.md)). If `to_zarr` raises a `safe_chunks` error, pass `align_chunks=True`.
