@@ -266,9 +266,8 @@ def create_pyramid(
             power of 2 in the range 1–32, ``x_dim`` or ``y_dim`` is not a
             dimension of ``ds``, no data variable has both spatial
             dimensions, a coordinate is 2-D over the spatial dims
-            (curvilinear grids are not supported), a spatial variable has
-            more than 4 dimensions (topozarr-core kernel limit), or a variable
-            over a spatial dim has a non-numeric dtype.
+            (curvilinear grids are not supported), or a variable over a
+            spatial dim has a non-numeric dtype.
 
     Examples:
         ```python
@@ -309,12 +308,6 @@ def create_pyramid(
     for name, da in ds.data_vars.items():
         if not {x_dim, y_dim} & set(da.dims):
             continue
-        if da.ndim > 4:
-            raise ValueError(
-                f"spatial variable {name!r} has {da.ndim} dimensions; "
-                "topozarr-core supports at most 4 "
-                "(use pyramid.as_datatree() for the xarray/Dask path, which lifts this limit)"
-            )
         if not np.issubdtype(da.dtype, np.number):
             raise ValueError(
                 f"variable {name!r} has non-numeric dtype {da.dtype} and is over a "

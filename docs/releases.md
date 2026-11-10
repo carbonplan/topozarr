@@ -11,6 +11,8 @@
 
 ### Fixed
 
+- `create_pyramid` accepts spatial variables with more than four dimensions
+  ([#58](https://github.com/carbonplan/topozarr/issues/58)).
 - `Pyramid.write` now applies `compressors`, `filters`, and `serializer` set
   in `pyramid.encoding`. It used to silently drop them and use zarr's
   defaults; only the `as_datatree().to_zarr()` path honored them.

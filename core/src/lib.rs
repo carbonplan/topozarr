@@ -254,10 +254,10 @@ fn block_reduce<'py>(
 ) -> PyResult<Bound<'py, PyAny>> {
     let method = Method::parse(method)?;
     let ndim = a.ndim();
-    if ndim == 0 || ndim > 4 {
-        return Err(PyValueError::new_err(format!(
-            "array must have 1-4 dimensions, got {ndim}"
-        )));
+    if ndim == 0 {
+        return Err(PyValueError::new_err(
+            "array must have at least 1 dimension",
+        ));
     }
     if stride.len() != ndim {
         return Err(PyValueError::new_err(format!(
@@ -334,28 +334,110 @@ mod tests {
         }
     }
 
+    // values include NaN and the fill (0.0) so every skip branch runs
+    fn sample(shape: &[usize]) -> ArrayD<f64> {
+        let n = shape.iter().product::<usize>();
+        let flat = (0..n)
+            .map(|i| match (i * 7) % 6 {
+                0 => f64::NAN,
+                1 => 0.0,
+                k => k as f64 + i as f64 * 0.37,
+            })
+            .collect();
+        ArrayD::from_shape_vec(IxDyn(shape), flat).unwrap()
+    }
+
+    fn same(a: &ArrayD<f64>, b: &ArrayD<f64>) -> bool {
+        a.shape() == b.shape()
+            && a.iter()
+                .zip(b.iter())
+                .all(|(x, y)| x == y || (x.is_nan() && y.is_nan()))
+    }
+
+    const CASES: [(Option<f64>, bool); 3] = [(None, true), (Some(0.0), true), (None, false)];
+
+    // odd extents exercise trailing-partial trims
+    const ND_SHAPES: [&[usize]; 5] = [
+        &[7, 9],
+        &[3, 7, 9],
+        &[2, 3, 7, 9],
+        &[2, 1, 3, 7, 9],
+        &[2, 2, 1, 2, 5, 6],
+    ];
+
+    fn unit_leading(nd: usize, sy: usize, sx: usize) -> Vec<usize> {
+        let mut stride = vec![1; nd];
+        stride[nd - 2] = sy;
+        stride[nd - 1] = sx;
+        stride
+    }
+
     #[test]
     fn row_fast_path_matches_generic() {
-        // odd extents exercise trailing-partial trims; values include NaN and
-        // the fill so every skip branch runs
-        let shape = [3usize, 7, 9];
-        let a = ArrayD::from_shape_fn(IxDyn(&shape), |i| match (i[0] * 31 + i[1] * 7 + i[2]) % 6 {
-            0 => f64::NAN,
-            1 => 0.0,
-            k => k as f64 + i[2] as f64 * 0.37,
-        });
-        for &(_, method) in Method::ALL {
-            for stride in [[1usize, 2, 2], [1, 3, 2], [1, 8, 4]] {
-                for (fill, skipna) in [(None, true), (Some(0.0), true), (None, false)] {
+        for shape in ND_SHAPES {
+            let a = sample(shape);
+            for &(_, method) in Method::ALL {
+                for (sy, sx) in [(2, 2), (3, 2), (8, 4)] {
+                    let stride = unit_leading(shape.len(), sy, sx);
+                    for (fill, skipna) in CASES {
+                        let out = reduce(a.view(), &stride, method, fill, skipna);
+                        let window: Vec<usize> =
+                            shape.iter().zip(&stride).map(|(&n, &s)| s.min(n)).collect();
+                        let expect =
+                            reduce_generic(a.view(), &window, out.shape(), method, fill, skipna);
+                        assert!(
+                            same(&out, &expect),
+                            "{shape:?} {method:?} {stride:?} {fill:?} {skipna}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nd_matches_folded_3d() {
+        // leading unit-stride axes are independent, so folding them is a no-op
+        for shape in [&[2usize, 3, 2, 8, 10][..], &[2, 1, 3, 2, 7, 9]] {
+            let nd = shape.len();
+            let a = sample(shape);
+            let lead = shape[..nd - 2].iter().product::<usize>();
+            let folded = a
+                .view()
+                .into_shape_with_order(IxDyn(&[lead, shape[nd - 2], shape[nd - 1]]))
+                .unwrap();
+            for &(_, method) in Method::ALL {
+                for (fill, skipna) in CASES {
+                    let out = reduce(a.view(), &unit_leading(nd, 2, 2), method, fill, skipna);
+                    let f = reduce(folded.view(), &[1, 2, 2], method, fill, skipna);
+                    let f = f.into_shape_with_order(IxDyn(out.shape())).unwrap();
+                    assert!(same(&out, &f), "{shape:?} {method:?} {fill:?} {skipna}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nd_generic_with_leading_stride() {
+        // stride > 1 on leading axes forces the generic path; compare against a
+        // per-output-cell window slice
+        let shape = [3usize, 4, 2, 7, 9];
+        let a = sample(&shape);
+        for stride in [[2usize, 1, 1, 2, 2], [3, 2, 2, 3, 2], [1, 4, 1, 8, 4]] {
+            let window: Vec<usize> = shape.iter().zip(&stride).map(|(&n, &s)| s.min(n)).collect();
+            for &(_, method) in Method::ALL {
+                for (fill, skipna) in CASES {
                     let out = reduce(a.view(), &stride, method, fill, skipna);
-                    let window: Vec<usize> =
-                        shape.iter().zip(&stride).map(|(&n, &s)| s.min(n)).collect();
-                    let expect =
-                        reduce_generic(a.view(), &window, out.shape(), method, fill, skipna);
+                    let expect = ArrayD::from_shape_fn(IxDyn(out.shape()), |o| {
+                        let w = a.slice_each_axis(|ax| {
+                            let k = ax.axis.index();
+                            let s = o[k] * window[k];
+                            ndarray::Slice::from(s..s + window[k])
+                        });
+                        reduce_window(w.iter().copied(), method, fill, skipna)
+                    });
                     assert!(
-                        out.iter()
-                            .zip(expect.iter())
-                            .all(|(x, y)| x == y || (x.is_nan() && y.is_nan())),
+                        same(&out, &expect),
                         "{method:?} {stride:?} {fill:?} {skipna}"
                     );
                 }
