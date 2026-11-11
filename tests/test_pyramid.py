@@ -943,7 +943,8 @@ def test_tiles_match_level_by_level(method, dtype, fill, factors, shard):
 
 
 @pytest.mark.parametrize("as_datatree", [False, True])
-def test_cf_packed_decoded_and_raw_write_the_same(as_datatree):
+@pytest.mark.parametrize("chunks", [{}, None])
+def test_cf_packed_decoded_and_raw_write_the_same(as_datatree, chunks):
     # decoded input is re-packed to uint16; a decoded 0.0 (raw 1000) stays data
     raw = np.full((8, 8), 1000, dtype="uint16")
     raw[0, 0] = 0  # _FillValue
@@ -963,7 +964,7 @@ def test_cf_packed_decoded_and_raw_write_the_same(as_datatree):
 
     outs = []
     for kw in ({}, {"mask_and_scale": False}):
-        d = xr.open_zarr(src, consolidated=False, **kw)
+        d = xr.open_zarr(src, consolidated=False, chunks=chunks, **kw)
         pyramid = create_pyramid(d.proj.assign_crs(spatial_ref="EPSG:4326"), levels=2)
         out = zarr.storage.MemoryStore()
         if as_datatree:
@@ -999,6 +1000,95 @@ def test_cf_unsigned_is_not_repacked():
         "_Unsigned": "true",
     }
     assert _repack(da) is da
+
+
+def test_lazy_cf_packed_source_is_read_tile_by_tile(monkeypatch):
+    from xarray.backends.zarr import ZarrArrayWrapper
+
+    raw = np.random.default_rng(7).integers(-30000, 30000, (2, 96, 80), "int16")
+    raw[:, :5, :7] = -32768
+    ds = xr.Dataset(
+        {"v": (("time", "y", "x"), raw)},
+        coords={"x": np.arange(80.0), "y": np.arange(96.0)},
+    )
+    ds["v"].attrs.update(scale_factor=1e-4, add_offset=0.25, _FillValue=-32768)
+    src = zarr.storage.MemoryStore()
+    ds.to_zarr(
+        src, zarr_format=3, consolidated=False, encoding={"v": {"chunks": (1, 16, 16)}}
+    )
+
+    lazy = xr.open_zarr(src, consolidated=False, chunks=None)
+    reads: list[int] = []
+    read = ZarrArrayWrapper.__getitem__
+
+    def recording_read(self, key):
+        out = read(self, key)
+        reads.append(np.size(out))
+        return out
+
+    monkeypatch.setattr(ZarrArrayWrapper, "__getitem__", recording_read)
+
+    pyramid = create_pyramid(lazy.proj.assign_crs(spatial_ref="EPSG:4326"), levels=3)
+    assert reads == []
+    assert pyramid.source["v"].dtype == np.dtype("int16")
+
+    for lvl in range(pyramid.levels):
+        pyramid.encoding[f"/{lvl}"]["v"].update(chunks=(1, 8, 8), shards=(1, 16, 16))
+    stats = pyramid.write(
+        zarr.storage.MemoryStore(), max_workers=2, max_region_bytes=4096, stats=True
+    )
+    tile_elems = max(
+        math.prod(shape)
+        for entry in stats.values()
+        for shape in entry["region_shapes"].values()
+    )
+    assert tile_elems < raw.size
+    assert max(reads) <= tile_elems
+
+
+def test_lazy_repack_matches_dask_repack():
+    from topozarr.coarsen import _repack
+
+    da = xr.DataArray(
+        np.array([[0.5, 1.5, -2.5, np.nan], [1e9, -1e9, 0.12344, 3.0]]),
+        dims=("y", "x"),
+        coords={"x": np.arange(4.0)},
+        name="v",
+        attrs={"units": "m"},
+    )
+    da.encoding = {
+        "scale_factor": 1e-2,
+        "add_offset": 0.25,
+        "_FillValue": -32768,
+        "dtype": "int16",
+        "chunks": (2, 2),
+        "preferred_chunks": {"y": 2, "x": 2},
+    }
+    lazy, dask = _repack(da), _repack(da.chunk())
+    assert lazy.dtype == np.dtype("int16")
+    assert (
+        lazy.encoding
+        == dask.encoding
+        == {
+            "chunks": (2, 2),
+            "preferred_chunks": {"y": 2, "x": 2},
+        }
+    )
+    selections = [
+        {"y": 1, "x": slice(1, 3)},
+        {"y": 1, "x": 3},
+        {"y": [1, 0], "x": [3, 0]},
+        {"y": slice(None, None, -1)},
+        {
+            "y": xr.DataArray([0, 1, 1], dims="z"),
+            "x": xr.DataArray([3, 0, 2], dims="z"),
+        },
+    ]
+    for sel in selections:
+        np.testing.assert_array_equal(
+            lazy.isel(sel).values, dask.isel(sel).values, strict=True
+        )
+    xr.testing.assert_identical(lazy.compute(), dask.compute())
 
 
 def test_levels_drop_stale_root_geozarr_attrs(create_dataset):

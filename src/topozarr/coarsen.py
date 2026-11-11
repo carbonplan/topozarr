@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from functools import partial
 from typing import Literal
 
 import numpy as np
 import xarray as xr
+from xarray.backends import BackendArray
+from xarray.core import indexing
 
 from .chunking import (
     DEFAULT_CHUNK_BYTES,
@@ -160,6 +164,39 @@ def _resolve_factors(
     return list(factors)
 
 
+def _pack(
+    x: xr.Variable, *, scale: float, offset: float, fill: float, dtype: np.dtype
+) -> xr.Variable:
+    info = np.iinfo(dtype.str)
+    return (
+        ((x - offset) / scale).round().fillna(fill).clip(info.min, info.max)
+    ).astype(dtype)
+
+
+class _PackedArray(BackendArray):
+    """Lazy view of a CF-decoded variable that packs each block as it is read,
+    so indexing a region only loads and converts that region."""
+
+    def __init__(
+        self,
+        decoded: xr.Variable,
+        pack: Callable[[xr.Variable], xr.Variable],
+        dtype: np.dtype,
+    ) -> None:
+        self.decoded = decoded
+        self.pack = pack
+        self.shape = decoded.shape
+        self.dtype = dtype
+
+    def __getitem__(self, key: indexing.ExplicitIndexer) -> np.ndarray:
+        return indexing.explicit_indexing_adapter(
+            key, self.shape, indexing.IndexingSupport.BASIC, self._getitem
+        )
+
+    def _getitem(self, key: tuple[int | slice, ...]) -> np.ndarray:
+        return self.pack(self.decoded[key]).values
+
+
 def _repack(da: xr.DataArray) -> xr.DataArray:
     """Re-pack a CF-decoded variable to its stored integer dtype.
 
@@ -183,10 +220,12 @@ def _repack(da: xr.DataArray) -> xr.DataArray:
         or "_Unsigned" in enc
     ):
         return da
-    info = np.iinfo(dtype.str)
-    packed = (
-        ((da - offset) / scale).round().fillna(fill).clip(info.min, info.max)
-    ).astype(dtype)
+    pack = partial(_pack, scale=scale, offset=offset, fill=fill, dtype=dtype)
+    if da.chunks is not None:
+        data = pack(da.variable).data
+    else:
+        data = indexing.LazilyIndexedArray(_PackedArray(da.variable, pack, dtype))
+    packed = xr.DataArray(data, dims=da.dims, coords=da.coords, name=da.name)
     packed.attrs = {
         **da.attrs,
         "scale_factor": scale,
