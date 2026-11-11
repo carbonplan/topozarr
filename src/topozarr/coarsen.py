@@ -190,10 +190,10 @@ class _PackedArray(BackendArray):
 
     def __getitem__(self, key: indexing.ExplicitIndexer) -> np.ndarray:
         return indexing.explicit_indexing_adapter(
-            key, self.shape, indexing.IndexingSupport.BASIC, self._getitem
+            key, self.shape, indexing.IndexingSupport.OUTER, self._getitem
         )
 
-    def _getitem(self, key: tuple[int | slice, ...]) -> np.ndarray:
+    def _getitem(self, key: tuple[int | slice | np.ndarray, ...]) -> np.ndarray:
         return self.pack(self.decoded[key]).values
 
 

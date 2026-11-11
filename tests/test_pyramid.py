@@ -1078,6 +1078,8 @@ def test_lazy_repack_matches_dask_repack():
         {"y": 1, "x": slice(1, 3)},
         {"y": 1, "x": 3},
         {"y": [1, 0], "x": [3, 0]},
+        {"y": []},
+        {"x": np.zeros(4, dtype=bool)},
         {"y": slice(None, None, -1)},
         {
             "y": xr.DataArray([0, 1, 1], dims="z"),
