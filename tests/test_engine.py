@@ -7,7 +7,7 @@ import zarr
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
-from topozarr_core import METHODS, block_reduce
+from topozarr_core import METHODS, block_reduce, pack
 
 from topozarr.coarsen import create_pyramid
 from topozarr.engine import copy_array, copy_region_shape, downsample_level
@@ -533,3 +533,83 @@ def test_pyramid_nd_parity(ds, levels, method):
         assert got.dims == ds.v.dims
         np.testing.assert_allclose(got.values, ref.v.values, rtol=1e-5, equal_nan=True)
         ref = getattr(ref.coarsen(x=2, y=2, boundary="trim"), method)()
+
+
+INT_DTYPES = ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+
+
+def pack_oracle(x: np.ndarray, scale: float, offset: float, fill: int, dtype: str):
+    """numpy CF packing, saturating where a bare clip + cast would overflow."""
+    info = np.iinfo(dtype)
+    with np.errstate(all="ignore"):
+        q = np.round((x - offset) / scale)
+    out = np.full(x.shape, fill, dtype)
+    ok = ~np.isnan(q)
+    hi, lo = q >= float(info.max), q <= float(info.min)
+    out[ok & hi], out[ok & lo] = info.max, info.min
+    mid = ok & ~hi & ~lo
+    out[mid] = q[mid].astype(dtype)
+    return out
+
+
+@pytest.mark.parametrize("out_dtype", INT_DTYPES)
+@pytest.mark.parametrize("in_dtype", ["f4", "f8"])
+def test_pack_matches_numpy(in_dtype, out_dtype):
+    info = np.iinfo(out_dtype)
+    rng = np.random.default_rng(0)
+    scale, offset, fill = 0.01, 5.0, int(info.max)
+    edges = [np.nan, np.inf, -np.inf, 1e30, -1e30, 0.0, -0.0, offset]
+    ties = offset + scale * (np.arange(-4, 5) + 0.5)
+    x = np.concatenate([edges, ties, rng.normal(0, 400, 4096)]).astype(in_dtype)
+    out = pack(x, scale, offset, fill, out_dtype)
+    assert out.dtype == np.dtype(out_dtype)
+    np.testing.assert_array_equal(out, pack_oracle(x, scale, offset, fill, out_dtype))
+    assert out[0] == fill and out[1] == info.max and out[2] == info.min
+
+
+@settings(max_examples=200, deadline=None)
+@given(
+    x=hnp.arrays(
+        st.sampled_from(["f4", "f8"]),
+        hnp.array_shapes(max_dims=3, max_side=6),
+        elements={"allow_nan": True, "allow_infinity": True},
+    ),
+    scale=st.floats(1e-6, 1e6) | st.floats(-1e6, -1e-6),
+    offset=st.floats(-1e6, 1e6),
+    out_dtype=st.sampled_from(INT_DTYPES),
+)
+def test_pack_property(x, scale, offset, out_dtype):
+    fill = int(np.iinfo(out_dtype).min)
+    np.testing.assert_array_equal(
+        pack(x, scale, offset, fill, out_dtype),
+        pack_oracle(x, scale, offset, fill, out_dtype),
+    )
+
+
+def test_pack_leaves_input_alone_and_makes_no_numpy_temporary():
+    import tracemalloc
+
+    from topozarr.pyramid import Packing
+
+    base = np.random.default_rng(0).normal(0, 100, (512, 1024))
+    x = base[:, ::2]  # non-contiguous view
+    x.flags.writeable = False
+    before = x.copy()
+    p = Packing(scale=0.01, offset=0.0, fill=-32768, dtype=np.dtype("int16"))
+    tracemalloc.start()
+    out = p(x)
+    peak = tracemalloc.get_traced_memory()[1]
+    tracemalloc.stop()
+    np.testing.assert_array_equal(x, before)
+    assert out.shape == x.shape and out.dtype == np.int16
+    # the Rust buffer is not traced; any float temporary on the Python side is
+    assert peak < x.nbytes // 4
+
+
+def test_pack_rejects_unsupported_dtypes():
+    with pytest.raises(TypeError):
+        pack(np.zeros(2, "i4"), 1.0, 0.0, 0, "int16")
+    with pytest.raises(TypeError):
+        pack(np.zeros(2, "f8"), 1.0, 0.0, 0, "float32")
+    with pytest.raises(OverflowError):
+        pack(np.zeros(2, "f8"), 1.0, 0.0, 70000, "int16")

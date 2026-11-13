@@ -14,7 +14,7 @@
 - For scaled integer variables over X or Y, `pyramid.source` now holds the
   decoded floats and `pyramid.level_templates[0]` holds a placeholder with
   the stored dtype. `Pyramid.summary()` and the default worker count size
-  those tiles from the float read.
+  those tiles from the float read plus the integer copy.
 
 ## 0.3.0
 

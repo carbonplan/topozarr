@@ -16,7 +16,7 @@ import xarray as xr
 import zarr
 import zarr.errors
 import zarr.storage
-from topozarr_core import METHODS
+from topozarr_core import METHODS, pack
 
 from .chunking import source_chunks
 from .engine import (
@@ -119,14 +119,9 @@ class Packing:
         }
 
     def __call__(self, x: np.ndarray) -> np.ndarray:
-        """Pack one float block. In-place on a private copy: one float temporary."""
-        info = np.iinfo(self.dtype)
-        q = x - self.offset
-        q /= self.scale
-        np.round(q, out=q)
-        q[np.isnan(q)] = self.fill
-        np.clip(q, info.min, info.max, out=q)
-        return q.astype(self.dtype)
+        """Pack one float block in the Rust kernel: no float temporary."""
+        out = pack(x, self.scale, self.offset, self.fill, self.dtype.name)
+        return out.astype(self.dtype, copy=False)
 
     def repack(self, da: xr.DataArray) -> xr.DataArray:
         """Pack a whole variable (lazily under dask), keeping chunk encoding."""
@@ -243,9 +238,10 @@ class Pyramid:
         return math.prod(math.ceil(n / r) for n, r in zip(template_da.shape, region))
 
     def _read_itemsize(self, name: str) -> int:
-        """Bytes per element of a level-0 tile as read: a packed variable is
-        read decoded (float). Packing adds a float temporary on top of this."""
-        return self.source[name].dtype.itemsize
+        """Peak bytes per element of a level-0 tile: a packed variable is
+        read decoded (float) and held alongside its packed copy."""
+        p = self.packing.get(name)
+        return self.source[name].dtype.itemsize + (p.dtype.itemsize if p else 0)
 
     def _tile_shape(self, name: str, k: int, max_region_bytes: int) -> tuple[int, ...]:
         """Level-0 tile covering whole shards of levels 0..k for one variable."""

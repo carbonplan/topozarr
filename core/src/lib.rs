@@ -302,9 +302,88 @@ fn block_reduce<'py>(
     }
 }
 
+/// CF-pack one float to a stored integer: `round((v - offset) / scale)`,
+/// NaN to `fill`, out-of-range saturating. Arithmetic stays in the input
+/// precision, matching numpy.
+trait Pack<T>: Copy {
+    fn pack_one(self, scale: Self, offset: Self, fill: T) -> T;
+}
+
+macro_rules! impl_pack {
+    ($f:ty => $($t:ty),*) => {$(
+        impl Pack<$t> for $f {
+            #[inline]
+            fn pack_one(self, scale: $f, offset: $f, fill: $t) -> $t {
+                let q = (self - offset) / scale;
+                // `as` casts NaN to 0, so NaN needs its own branch; it
+                // saturates everything else, including the infinities
+                if q.is_nan() { fill } else { q.round_ties_even() as $t }
+            }
+        }
+    )*};
+}
+impl_pack!(f32 => i8, i16, i32, i64, u8, u16, u32, u64);
+impl_pack!(f64 => i8, i16, i32, i64, u8, u16, u32, u64);
+
+/// One pass, no float temporary: peak memory is the input plus the output.
+fn pack_array<F: Pack<T>, T: Copy>(view: ArrayViewD<F>, scale: F, offset: F, fill: T) -> ArrayD<T> {
+    view.mapv(|v| v.pack_one(scale, offset, fill))
+}
+
+#[pyfunction]
+fn pack<'py>(
+    py: Python<'py>,
+    x: &Bound<'py, PyUntypedArray>,
+    scale: f64,
+    offset: f64,
+    fill: &Bound<'py, PyAny>,
+    dtype: &str,
+) -> PyResult<Bound<'py, PyAny>> {
+    macro_rules! to {
+        ($f:ty, $t:ty) => {{
+            let arr = x.cast::<PyArrayDyn<$f>>()?;
+            let ro = arr.readonly();
+            let view = ro.as_array();
+            // extracted as the target type so large u64 fills stay exact
+            let fill: $t = fill.extract()?;
+            let out = py.detach(|| pack_array(view, scale as $f, offset as $f, fill));
+            Ok(out.into_pyarray(py).into_any())
+        }};
+    }
+    macro_rules! from {
+        ($f:ty) => {
+            match dtype {
+                "int8" => to!($f, i8),
+                "int16" => to!($f, i16),
+                "int32" => to!($f, i32),
+                "int64" => to!($f, i64),
+                "uint8" => to!($f, u8),
+                "uint16" => to!($f, u16),
+                "uint32" => to!($f, u32),
+                "uint64" => to!($f, u64),
+                other => Err(PyTypeError::new_err(format!(
+                    "unsupported output dtype {other}; expected an 8 to 64 bit integer"
+                ))),
+            }
+        };
+    }
+
+    let in_dtype = x.dtype();
+    if in_dtype.is_equiv_to(&numpy::dtype::<f32>(py)) {
+        from!(f32)
+    } else if in_dtype.is_equiv_to(&numpy::dtype::<f64>(py)) {
+        from!(f64)
+    } else {
+        Err(PyTypeError::new_err(format!(
+            "unsupported input dtype {in_dtype}; expected f32 or f64"
+        )))
+    }
+}
+
 #[pymodule]
 fn topozarr_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(block_reduce, m)?)?;
+    m.add_function(wrap_pyfunction!(pack, m)?)?;
     m.add("METHODS", PyTuple::new(m.py(), Method::names())?)?;
     Ok(())
 }
@@ -572,5 +651,43 @@ mod tests {
         assert_eq!(out.shape(), &[2, 1, 1]);
         assert_eq!(out[[0, 0, 0]], 2.5);
         assert_eq!(out[[1, 0, 0]], 25.0);
+    }
+
+    #[test]
+    fn pack_nan_inf_and_range_saturate() {
+        let x = array![f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e9, -1e9, 12.0].into_dyn();
+        let out: ArrayD<i16> = pack_array(x.view(), 1.0, 0.0, -9999);
+        assert_eq!(
+            out.as_slice().unwrap(),
+            &[-9999, i16::MAX, i16::MIN, i16::MAX, i16::MIN, 12]
+        );
+        let top: ArrayD<i64> = pack_array(array![1e30, -1e30].into_dyn().view(), 1.0, 0.0, 0);
+        assert_eq!(top.as_slice().unwrap(), &[i64::MAX, i64::MIN]);
+    }
+
+    #[test]
+    fn pack_rounds_ties_to_even_after_scale_offset() {
+        let x = array![10.5, 11.5, 12.5, 9.5].into_dyn();
+        let out: ArrayD<u8> = pack_array(x.view(), 1.0, 10.0, 255);
+        assert_eq!(out.as_slice().unwrap(), &[0, 2, 2, 0]);
+        let scaled: ArrayD<i32> = pack_array(array![0.25, 0.75].into_dyn().view(), 0.5, 0.0, 0);
+        assert_eq!(scaled.as_slice().unwrap(), &[0, 2]);
+    }
+
+    #[test]
+    fn pack_strided_view_keeps_logical_order() {
+        let x = array![[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+        let out: ArrayD<i16> = pack_array(x.t().into_dyn(), 1.0, 0.0, 0);
+        assert_eq!(out, array![[1i16, 4], [2, 5], [3, 6]].into_dyn());
+    }
+
+    #[test]
+    fn pack_f32_stays_in_f32() {
+        // 0.35f32 / 0.1f32 is the tie 3.5 in f32 (packs to 4); widened to
+        // f64 the same inputs give 3.4999999 (packs to 3)
+        let (v, scale) = (0.35f32, 0.1f32);
+        assert_eq!(((v as f64) / (scale as f64)).round_ties_even() as i16, 3);
+        let out: ArrayD<i16> = pack_array(array![v].into_dyn().view(), scale, 0.0, 0);
+        assert_eq!(out[[0]], 4);
     }
 }

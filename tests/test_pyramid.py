@@ -1044,8 +1044,8 @@ def test_lazy_cf_packed_source_is_read_tile_by_tile(monkeypatch):
 
     pyramid = create_pyramid(lazy.proj.assign_crs(spatial_ref="EPSG:4326"), levels=3)
     assert reads == []
-    # tiles are sized from the decoded read, not the packed dtype
-    assert pyramid._read_itemsize("v") == 8
+    # tiles are sized from the decoded read plus the packed copy
+    assert pyramid._read_itemsize("v") == 10
 
     for lvl in range(pyramid.levels):
         pyramid.encoding[f"/{lvl}"]["v"].update(chunks=(1, 8, 8), shards=(1, 16, 16))
