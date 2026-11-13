@@ -248,6 +248,7 @@ def write_tiles(
     executor: ThreadPoolExecutor,
     on_region: Callable[[], None] | None = None,
     timer: RegionTimer | None = None,
+    pack: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> list[Future[None]]:
     """Write ``dsts[0]`` from ``values`` and each ``dsts[j]`` by reducing the
     tile written to ``dsts[j-1]`` by ``strides[j]``, one source read per tile.
@@ -262,6 +263,8 @@ def write_tiles(
         block = values[region]
         if not isinstance(values, np.ndarray):
             block = np.ascontiguousarray(block)
+        if pack is not None:
+            block = pack(block)
         read_s = perf_counter() - t0
         reduce_s = write_s = 0.0
         for j, dst in enumerate(dsts):

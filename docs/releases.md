@@ -1,5 +1,21 @@
 # Release notes
 
+## Unreleased
+
+### Fixed
+
+- Scaled integer input (CF packed data) opened lazily with `chunks=None` no
+  longer loads each variable whole as float64 in `create_pyramid`. `Pyramid.write`
+  now converts each tile back to its stored integer dtype as it is read, so
+  memory stays bounded by the tile size. The written store is unchanged.
+
+### Changed
+
+- For scaled integer variables over X or Y, `pyramid.source` now holds the
+  decoded floats and `pyramid.level_templates[0]` holds a placeholder with
+  the stored dtype. `Pyramid.summary()` and the default worker count size
+  those tiles from the float read.
+
 ## 0.3.0
 
 ### Added

@@ -21,7 +21,7 @@ from .metadata import (
     strip_geozarr_attrs,
     validate_spatial_dims,
 )
-from .pyramid import CoarseningMethod, Pyramid, validate_method
+from .pyramid import CoarseningMethod, Packing, Pyramid, validate_method
 
 
 def _level_source_chunks(
@@ -160,15 +160,15 @@ def _resolve_factors(
     return list(factors)
 
 
-def _repack(da: xr.DataArray) -> xr.DataArray:
-    """Re-pack a CF-decoded variable to its stored integer dtype.
+def _packing(da: xr.DataArray) -> Packing | None:
+    """CF packing to restore for a decoded variable, or None to pass it through.
 
     ``xr.open_*`` decodes ``scale_factor`` / ``add_offset`` packed integers to
-    float (4x larger as f8). This restores the raw-input form: packed ints with
-    the CF values in ``.attrs``, so both ways of opening write the same store.
-    Unpacked, trivially packed (scale 1, offset 0), or fill-less variables pass
-    through, since NaN cannot be cast to an integer, as do ``_Unsigned``
-    variables (stored signed, decoded unsigned).
+    float (4x larger as f8). Packing restores the raw-input form so both ways
+    of opening write the same store. Unpacked, trivially packed (scale 1,
+    offset 0), or fill-less variables pass through, since NaN cannot be cast
+    to an integer, as do ``_Unsigned`` variables (stored signed, decoded
+    unsigned).
     """
     enc = da.encoding
     dtype = np.dtype(enc.get("dtype", da.dtype))
@@ -182,21 +182,13 @@ def _repack(da: xr.DataArray) -> xr.DataArray:
         or fill is None
         or "_Unsigned" in enc
     ):
-        return da
-    info = np.iinfo(dtype.str)
-    packed = (
-        ((da - offset) / scale).round().fillna(fill).clip(info.min, info.max)
-    ).astype(dtype)
-    packed.attrs = {
-        **da.attrs,
-        "scale_factor": scale,
-        "add_offset": offset,
-        "_FillValue": fill,
-    }
-    packed.encoding = {
-        k: v for k, v in enc.items() if k in ("chunks", "preferred_chunks")
-    }
-    return packed
+        return None
+    return Packing(scale, offset, fill, dtype)
+
+
+def _repack(da: xr.DataArray) -> xr.DataArray:
+    p = _packing(da)
+    return da if p is None else p.repack(da)
 
 
 def create_pyramid(
@@ -314,9 +306,19 @@ def create_pyramid(
                 "spatial dim; neither coarsening path can reduce it. Drop it first: "
                 f"ds.drop_vars([{str(name)!r}])"
             )
-    ds = ds.assign({name: _repack(da) for name, da in ds.data_vars.items()})
+    # spatial packed vars stay decoded in the source and are packed per tile at
+    # write; planning sees a placeholder with the packed dtype/attrs
+    packing = {
+        str(name): p
+        for name, da in ds.data_vars.items()
+        if {x_dim, y_dim} & set(da.dims) and (p := _packing(da)) is not None
+    }
+    source = ds.assign(
+        {n: _repack(da) for n, da in ds.data_vars.items() if str(n) not in packing}
+    )
     # root-only geozarr attrs (e.g. from a prior ETL) would go stale on every level
-    ds.attrs = strip_geozarr_attrs(ds.attrs)
+    source.attrs = strip_geozarr_attrs(source.attrs)
+    ds = source.assign({n: p.placeholder(source[n]) for n, p in packing.items()})
     crs_str = get_crs(ds)
     level_templates = build_level_templates(ds, factors, x_dim, y_dim)
 
@@ -376,7 +378,8 @@ def create_pyramid(
     fill_values = {str(name): _fill(da) for name, da in ds.data_vars.items()}
 
     return Pyramid(
-        source=ds,
+        source=source,
+        packing=packing,
         level_templates=level_templates,
         encoding=full_encoding,
         attrs=attrs,

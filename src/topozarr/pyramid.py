@@ -101,13 +101,65 @@ def _to_python(obj: Any) -> Any:
     return obj
 
 
+@dataclass(frozen=True)
+class Packing:
+    """CF scale/offset packing of a decoded float variable to its stored ints."""
+
+    scale: float
+    offset: float
+    fill: int
+    dtype: np.dtype
+
+    @property
+    def attrs(self) -> dict[str, Any]:
+        return {
+            "scale_factor": self.scale,
+            "add_offset": self.offset,
+            "_FillValue": self.fill,
+        }
+
+    def __call__(self, x: np.ndarray) -> np.ndarray:
+        """Pack one float block. In-place on a private copy: one float temporary."""
+        info = np.iinfo(self.dtype)
+        q = x - self.offset
+        q /= self.scale
+        np.round(q, out=q)
+        q[np.isnan(q)] = self.fill
+        np.clip(q, info.min, info.max, out=q)
+        return q.astype(self.dtype)
+
+    def repack(self, da: xr.DataArray) -> xr.DataArray:
+        """Pack a whole variable (lazily under dask), keeping chunk encoding."""
+        if da.chunks is not None:
+            data = da.data.map_blocks(self, dtype=self.dtype)
+        else:
+            data = self(da.values)
+        packed = da.copy(data=data)
+        packed.attrs = {**da.attrs, **self.attrs}
+        packed.encoding = {
+            k: v for k, v in da.encoding.items() if k in ("chunks", "preferred_chunks")
+        }
+        return packed
+
+    def placeholder(self, da: xr.DataArray) -> xr.DataArray:
+        """Zero-cost stand-in with the packed dtype/attrs, for planning only."""
+        out = da.copy(data=np.broadcast_to(np.zeros(1, self.dtype), da.shape))
+        out.attrs = {**da.attrs, **self.attrs}
+        chunks = source_chunks(da)
+        out.encoding = {"chunks": chunks} if chunks is not None else {}
+        return out
+
+
 @dataclass
 class Pyramid:
     """A write plan for a multiscale Zarr pyramid, returned by
     [create_pyramid][topozarr.coarsen.create_pyramid].
 
     Attributes:
-        source: The original (level 0) dataset.
+        source: The original (level 0) dataset. Scaled integer (CF packed)
+            variables over X or Y stay decoded here.
+        packing: Per-variable packing applied to each tile of ``source`` as it
+            is written.
         level_templates: Per-level datasets carrying real coordinates and
             attrs; spatial data variables are zero-cost placeholders with the
             correct shape/dtype (their data is computed during
@@ -125,6 +177,7 @@ class Pyramid:
     method: CoarseningMethod
     factors: list[int] = field(default_factory=list)
     fill_values: dict[str, float | int | None] = field(default_factory=dict)
+    packing: dict[str, Packing] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # method is a plain field, so a plan can be edited after create_pyramid
@@ -189,6 +242,11 @@ class Pyramid:
         region = self._region_shape(lvl, name, max_region_bytes)
         return math.prod(math.ceil(n / r) for n, r in zip(template_da.shape, region))
 
+    def _read_itemsize(self, name: str) -> int:
+        """Bytes per element of a level-0 tile as read: a packed variable is
+        read decoded (float). Packing adds a float temporary on top of this."""
+        return self.source[name].dtype.itemsize
+
     def _tile_shape(self, name: str, k: int, max_region_bytes: int) -> tuple[int, ...]:
         """Level-0 tile covering whole shards of levels 0..k for one variable."""
         da0 = self.level_templates[0][name]
@@ -203,7 +261,7 @@ class Pyramid:
         return copy_region_shape(
             tuple(tile),
             da0.shape,
-            da0.dtype.itemsize,
+            self._read_itemsize(name),
             source_chunks(self.source[name]),
             max_region_bytes,
         )
@@ -231,8 +289,7 @@ class Pyramid:
                 n: self._tile_shape(n, k, max_region_bytes) for n in coarsened_vars
             }
             nbytes = {
-                n: math.prod(t) * self.level_templates[0][n].dtype.itemsize
-                for n, t in tiles.items()
+                n: math.prod(t) * self._read_itemsize(n) for n, t in tiles.items()
             }
             workers = max_workers or default_max_workers(max(nbytes.values()))
             count = sum(
@@ -322,7 +379,7 @@ class Pyramid:
                         for name, tile in tiles.items()
                     ]
                     region_bytes = max(
-                        math.prod(tile) * self.level_templates[0][name].dtype.itemsize
+                        math.prod(tile) * self._read_itemsize(name)
                         for name, tile in tiles.items()
                     )
                 else:
@@ -557,6 +614,7 @@ class Pyramid:
                                 executor=ex,
                                 on_region=on_region,
                                 timer=timer,
+                                pack=self.packing.get(name),
                             )
                             if lvl == tile_k
                             else self._write_var(
@@ -723,8 +781,11 @@ class Pyramid:
                 f"as_datatree cannot express method {self.method!r}: xarray.coarsen "
                 "has no such reduction. Use Pyramid.write, which runs the kernel."
             )
-        dtypes = {str(n): da.dtype for n, da in self.source.data_vars.items()}
-        ds_chain: list[xr.Dataset] = [self.source]
+        source = self.source.assign(
+            {n: p.repack(self.source[n]) for n, p in self.packing.items()}
+        )
+        dtypes = {str(n): da.dtype for n, da in source.data_vars.items()}
+        ds_chain: list[xr.Dataset] = [source]
         for lvl in range(1, self.levels):
             step = self._step(lvl)
             prev = ds_chain[-1]
@@ -784,7 +845,8 @@ class Pyramid:
         through each coarsen. The exception is an ``f8`` source, where the two
         differ by under 1 ULP on `mean`/`sum` (window summation order).
         CF-packed sources come back packed (integer dtype, ``scale_factor`` /
-        ``add_offset`` in attrs), matching ``write``.
+        ``add_offset`` in attrs), matching ``write``; a packed source that is
+        not Dask-backed is loaded whole.
 
         Raises:
             NotImplementedError: If ``method`` has no ``xarray.coarsen``
