@@ -1080,6 +1080,18 @@ def test_packing_numpy_matches_dask():
         )
 
 
+def test_packing_big_endian_encoding_packs_native():
+    from topozarr.coarsen import _packing
+
+    da = xr.DataArray(np.array([1.0, np.nan]))
+    da.encoding = {"dtype": np.dtype(">i2"), "scale_factor": 0.5, "_FillValue": -1}
+    p = _packing(da)
+    assert p is not None and p.dtype == np.dtype("=i2")
+    np.testing.assert_array_equal(
+        p(da.values), np.array([2, -1], dtype="=i2"), strict=True
+    )
+
+
 def test_levels_drop_stale_root_geozarr_attrs(create_dataset):
     ds = create_dataset(nx=16, ny=16)
     stale = {"spatial:transform": [1.0, 0, 0, 0, -1.0, 0], "spatial:shape": [16, 16]}

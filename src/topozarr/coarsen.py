@@ -171,7 +171,8 @@ def _packing(da: xr.DataArray) -> Packing | None:
     unsigned).
     """
     enc = da.encoding
-    dtype = np.dtype(enc.get("dtype", da.dtype))
+    # native order: netCDF encodings can be big-endian (">i2")
+    dtype = np.dtype(enc.get("dtype", da.dtype)).newbyteorder("=")
     fill = enc.get("_FillValue")
     scale = float(enc.get("scale_factor", 1.0))
     offset = float(enc.get("add_offset", 0.0))

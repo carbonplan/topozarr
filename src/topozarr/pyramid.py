@@ -120,8 +120,7 @@ class Packing:
 
     def __call__(self, x: np.ndarray) -> np.ndarray:
         """Pack one float block in the Rust kernel: no float temporary."""
-        out = pack(x, self.scale, self.offset, self.fill, self.dtype.name)
-        return out.astype(self.dtype, copy=False)
+        return pack(x, self.scale, self.offset, self.fill, self.dtype.name)
 
     def repack(self, da: xr.DataArray) -> xr.DataArray:
         """Pack a whole variable (lazily under dask), keeping chunk encoding."""
