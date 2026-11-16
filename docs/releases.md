@@ -1,5 +1,24 @@
 # Release notes
 
+## 0.3.1
+
+### Fixed
+
+- Scaled integer input (CF packed data) opened lazily with `chunks=None` no
+  longer loads each variable whole as float64 in `create_pyramid`. `Pyramid.write`
+  now converts each tile back to its stored integer dtype as it is read, so
+  memory stays bounded by the tile size. The written store is unchanged.
+
+### Changed
+
+- For scaled integer variables over X or Y, `pyramid.source` now holds the
+  decoded floats and `pyramid.level_templates[0]` holds a placeholder with
+  the stored dtype. The new `Pyramid.packing` field holds the scale, offset,
+  fill, and dtype for each of them. `Pyramid.summary()` and the default
+  worker count size those tiles from the float read plus the integer copy.
+- Requires `topozarr-core==0.3.1`, which adds the `pack` kernel used to
+  convert each tile.
+
 ## 0.3.0
 
 ### Added

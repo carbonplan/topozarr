@@ -21,9 +21,10 @@ If you need a different grid, reproject or regrid first, then pass the result to
 ??? note "Scaled and masked integer details"
 
     CF calls these packed variables. Xarray decodes them to floats on open,
-    which can make them 4x larger, so `create_pyramid` converts them back to
-    their stored integer dtype. Opening them with `mask_and_scale=False` keeps
-    them as integers from the start.
+    which can make them 4x larger, so they are converted back to their stored
+    integer dtype one tile at a time as they are written. Opening them with
+    `mask_and_scale=False` keeps them as integers from the start, which also
+    reads less memory per tile.
 
     Three cases are written as floats: scaled integers without a `_FillValue`,
     `_Unsigned` variables, and integers that only have a `_FillValue` (for
