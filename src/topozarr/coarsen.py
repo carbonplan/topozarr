@@ -184,7 +184,8 @@ def _packing(da: xr.DataArray) -> Packing | None:
         or "_Unsigned" in enc
     ):
         return None
-    return Packing(scale, offset, fill, dtype)
+    # some files store a float _FillValue on an int var; the kernel needs an int
+    return Packing(scale, offset, int(dtype.type(fill)), dtype)
 
 
 def _repack(da: xr.DataArray) -> xr.DataArray:

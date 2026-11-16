@@ -1015,6 +1015,21 @@ def test_cf_unsigned_is_not_repacked():
     assert _repack(da) is da
 
 
+def test_cf_packed_float_fill_value_repacks():
+    from topozarr.coarsen import _repack
+
+    da = xr.DataArray(np.array([[1.0, np.nan]]), dims=("y", "x"))
+    da.encoding = {
+        "scale_factor": 0.5,
+        "add_offset": 0.0,
+        "_FillValue": -9999.0,
+        "dtype": "int16",
+    }
+    out = _repack(da)
+    assert out.dtype == np.int16
+    np.testing.assert_array_equal(out.values, [[2, -9999]])
+
+
 def test_lazy_cf_packed_source_is_read_tile_by_tile(monkeypatch):
     # a lazily opened packed source must never be decoded whole (OOM)
     from xarray.backends.zarr import ZarrArrayWrapper

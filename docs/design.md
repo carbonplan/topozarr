@@ -30,7 +30,8 @@ There are two ways to turn the plan into data:
 `write` splits the source into level `0` tiles, each covering whole shards of
 levels `0..k`. Each worker:
 
-1. Writes its tile to level `0`.
+1. Writes its tile to level `0`. Scaled integer variables are converted back
+   to their stored dtype (`topozarr_core.pack`) as the tile is read.
 2. For each level `1..k`, reduces the previous level's block with the Rust
    kernel (`topozarr_core.block_reduce`), then writes the result.
 

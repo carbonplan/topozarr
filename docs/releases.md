@@ -1,6 +1,6 @@
 # Release notes
 
-## Unreleased
+## 0.3.1
 
 ### Fixed
 
@@ -13,8 +13,11 @@
 
 - For scaled integer variables over X or Y, `pyramid.source` now holds the
   decoded floats and `pyramid.level_templates[0]` holds a placeholder with
-  the stored dtype. `Pyramid.summary()` and the default worker count size
-  those tiles from the float read plus the integer copy.
+  the stored dtype. The new `Pyramid.packing` field holds the scale, offset,
+  fill, and dtype for each of them. `Pyramid.summary()` and the default
+  worker count size those tiles from the float read plus the integer copy.
+- Requires `topozarr-core==0.3.1`, which adds the `pack` kernel used to
+  convert each tile.
 
 ## 0.3.0
 
