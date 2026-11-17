@@ -1,5 +1,7 @@
 """Kernel and driver parity tests against xarray.coarsen(boundary="trim")."""
 
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -7,10 +9,10 @@ import zarr
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from hypothesis.extra import numpy as hnp
-from topozarr_core import METHODS, block_reduce, pack
+from topozarr_core import DTYPES, METHODS, block_reduce, pack
 
 from topozarr.coarsen import create_pyramid
-from topozarr.engine import copy_array, copy_region_shape, downsample_level
+from topozarr.engine import copy_region_shape, downsample_level
 
 # Methods with an xarray.coarsen equivalent, so a reference can be computed.
 # `nearest` is excluded because xarray has no such reduction -- it is covered
@@ -207,40 +209,13 @@ def test_downsample_level_zarr_roundtrip(shards):
         "dst", shape=(16, 15), dtype=data.dtype, chunks=(4, 4), shards=shards
     )
 
-    downsample_level(src, dst, stride=(2, 2), method="mean")
+    with ThreadPoolExecutor(2) as ex:
+        for future in downsample_level(
+            src, dst, stride=(2, 2), method="mean", executor=ex
+        ):
+            future.result()
     want = _xr_reference(data, (2, 2), "mean").astype("f4")
     np.testing.assert_allclose(dst[:], want, rtol=1e-6, equal_nan=True)
-
-
-def test_copy_array():
-    rng = np.random.default_rng(4)
-    data = rng.random((20, 17)).astype("f4")
-    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
-    dst = group.create_array("a", shape=data.shape, dtype=data.dtype, chunks=(6, 6))
-    copy_array(data, dst)
-    np.testing.assert_array_equal(dst[:], data)
-
-
-class _RegionRecorder:
-    """Indexable shim that records requested regions and forbids full reads."""
-
-    def __init__(self, data: np.ndarray):
-        self.data = data
-        self.shape = data.shape
-        self.regions: list[tuple[slice, ...]] = []
-
-    def __getitem__(self, region):
-        self.regions.append(region)
-        return self.data[region]
-
-    def __array__(self, *args, **kwargs):
-        raise AssertionError("full-array materialization")
-
-
-def _make_dst(group, shape, chunks, shards=None, dtype="f4"):
-    return group.create_array(
-        "dst", shape=shape, dtype=dtype, chunks=chunks, shards=shards
-    )
 
 
 def test_default_max_workers(monkeypatch):
@@ -274,22 +249,6 @@ def test_copy_region_shape():
     assert copy_region_shape(shard, shape, itemsize, (16, 16), 4) == (8, 8)
 
 
-def test_copy_array_streams_regions():
-    rng = np.random.default_rng(5)
-    data = rng.random((32, 32)).astype("f4")
-    src = _RegionRecorder(data)
-
-    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
-    dst = _make_dst(group, data.shape, chunks=(4, 4), shards=(8, 8))
-    copy_array(src, dst, source_chunks=(16, 16))
-
-    np.testing.assert_array_equal(dst[:], data)
-    # regions widened to the 16x16 source chunk grid; each chunk read once
-    assert len(src.regions) == 4
-    starts = {(r[0].start, r[1].start) for r in src.regions}
-    assert starts == {(0, 0), (0, 16), (16, 0), (16, 16)}
-
-
 class _CountingStore(zarr.storage.MemoryStore):
     """MemoryStore that records set/delete keys."""
 
@@ -307,64 +266,24 @@ class _CountingStore(zarr.storage.MemoryStore):
         await super().delete(key)
 
 
-def test_copy_array_skips_all_fill_regions():
-    from topozarr.engine import RegionTimer
-
+def test_write_skips_all_fill_shards():
+    data = np.full((512, 512), np.nan, dtype="f4")
+    data[:256, :256] = 1.0
+    ds = xr.Dataset(
+        {"v": (("y", "x"), data)},
+        coords={"x": np.arange(512.0), "y": np.arange(512.0)},
+    ).proj.assign_crs(spatial_ref="EPSG:4326")
+    pyramid = create_pyramid(ds, levels=2, chunks_per_shard=1)
+    for lvl, n in (("/0", 256), ("/1", 128)):
+        pyramid.encoding[lvl]["v"] = {"chunks": (n, n), "shards": (n, n)}
     store = _CountingStore()
-    group = zarr.open_group(store, mode="w")
-    data = np.full((16, 16), np.nan, dtype="f4")
-    data[:8, :8] = 1.0
-    dst = group.create_array(
-        "a",
-        shape=data.shape,
-        dtype="f4",
-        chunks=(4, 4),
-        shards=(8, 8),
-        fill_value=np.nan,
-    )
+    pyramid.write(store)
 
-    timer = RegionTimer()
-    copy_array(data, dst, timer=timer)
-
-    # only the non-fill shard is written; no deletes for the all-NaN shards
-    assert [k for k in store.set_keys if "/c/" in k] == ["a/c/0/0"]
-    assert store.delete_keys == []
-    assert timer.skipped == 3
-    np.testing.assert_array_equal(dst[:], data)
-
-
-def test_copy_array_skip_empty_disabled_writes_all_regions():
-    data = np.full((16, 16), np.nan, dtype="f4")
-    data[:8, :8] = 1.0
-    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
-    dst = group.create_array(
-        "a",
-        shape=data.shape,
-        dtype="f4",
-        chunks=(4, 4),
-        shards=(8, 8),
-        fill_value=np.nan,
-    )
-    copy_array(data, dst, skip_empty=False)
-    np.testing.assert_array_equal(dst[:], data)
-
-
-def test_copy_array_lazy_zarr_source():
-    rng = np.random.default_rng(6)
-    data = rng.random((30, 20)).astype("f4")
-
-    src_store = zarr.storage.MemoryStore()
-    xr.Dataset({"v": (("y", "x"), data)}).to_zarr(
-        src_store, consolidated=False, encoding={"v": {"chunks": (10, 10)}}
-    )
-    lazy = xr.open_dataset(src_store, engine="zarr", chunks=None, consolidated=False)
-    var = lazy["v"].variable
-    assert lazy["v"].encoding["chunks"] == (10, 10)
-
-    group = zarr.open_group(zarr.storage.MemoryStore(), mode="w")
-    dst = _make_dst(group, data.shape, chunks=(5, 5))
-    copy_array(var, dst, source_chunks=(10, 10))
-    np.testing.assert_array_equal(dst[:], data)
+    # only the non-fill shard of each level is written; no deletes for the rest
+    written = sorted(k for k in store.set_keys if "/v/c/" in k)
+    assert written == ["0/v/c/0/0", "1/v/c/0/0"]
+    assert [k for k in store.delete_keys if "/v/c/" in k] == []
+    np.testing.assert_array_equal(zarr.open_array(store, path="0/v")[:], data)
 
 
 @pytest.mark.parametrize("method", XR_METHODS)
@@ -455,6 +374,48 @@ def test_pyramid_write_icechunk(create_dataset, tmp_path):
         ds.coarsen(x=2, y=2, boundary="trim").mean().elevation.values,
         rtol=1e-6,
     )
+
+
+@pytest.mark.parametrize("method", METHODS)
+@pytest.mark.parametrize("dtype", DTYPES)
+def test_block_reduce_accepts_every_exported_dtype(dtype, method):
+    a = np.arange(16, dtype=dtype).reshape(4, 4)
+    out = block_reduce(a, (2, 2), method)
+    assert out.dtype == a.dtype and out.shape == (2, 2)
+
+
+@pytest.mark.parametrize("dtype", ["f2", "c8", "bool", ">i2"])
+def test_block_reduce_rejects_dtypes_outside_export(dtype):
+    assert np.dtype(dtype).name not in DTYPES or not np.dtype(dtype).isnative
+    with pytest.raises(TypeError, match="unsupported dtype"):
+        block_reduce(np.zeros((4, 4), dtype), (2, 2), "nearest")
+
+
+@pytest.mark.parametrize("shape", [(0, 4), (4, 0), (2, 0, 4)])
+def test_block_reduce_rejects_zero_length_axis(shape):
+    with pytest.raises(ValueError, match="zero-length axis"):
+        block_reduce(np.zeros(shape, "f4"), (1,) * (len(shape) - 2) + (2, 2), "mean")
+
+
+def test_block_reduce_fill_is_exact_in_the_array_dtype():
+    # NaN is not an integer: it used to become 0 and mask real zeros
+    a = np.array([[0, 4], [4, 4]], "i2")
+    with pytest.raises(ValueError, match="not representable"):
+        block_reduce(a, (2, 2), "mean", float("nan"))
+    with pytest.raises(ValueError, match="not representable"):
+        block_reduce(a.astype("u1"), (2, 2), "mean", -9999)
+    # an integral float fill is accepted (some files declare one on an int var)
+    assert block_reduce(a, (2, 2), "mean", 0.0)[0, 0] == 4
+    # an i64 fill past 2**53 is matched exactly, not after an f64 round trip
+    big = 2**62 + 1
+    b = np.array([[big, 4], [4, 4]], "i8")
+    assert block_reduce(b, (2, 2), "mean", big)[0, 0] == 4
+
+
+def test_block_reduce_int64_mean_exact_past_2_53():
+    big = 2**53 + 1
+    assert block_reduce(np.full((2, 2), big, "i8"), (2, 2), "mean")[0, 0] == big
+    assert block_reduce(np.full((2, 2), 2**63, "u8"), (2, 2), "max")[0, 0] == 2**63
 
 
 def test_block_reduce_rejects_0d():

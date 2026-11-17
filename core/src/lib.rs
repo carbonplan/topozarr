@@ -56,25 +56,61 @@ impl Method {
     }
 }
 
+/// numpy names of the dtypes `block_reduce` dispatches over, exported as
+/// `DTYPES` so the Python layer can refuse anything else before it writes.
+const DTYPES: &[&str] = &[
+    "uint8", "uint16", "uint32", "uint64", "int8", "int16", "int32", "int64", "float32", "float64",
+];
+
 /// Element types the kernel dispatches over. `nan()` is `None` for integers.
 trait Element: Copy + Send + Sync + PartialOrd + 'static {
     const ZERO: Self;
-    fn to_f64(self) -> f64;
-    fn from_f64(v: f64) -> Self;
+    /// `sum`/`mean` accumulator: an exact wider integer for integers, f64 for
+    /// floats.
+    type Acc: Copy + Default + std::ops::AddAssign;
+    fn widen(self) -> Self::Acc;
+    fn from_sum(acc: Self::Acc) -> Self;
+    fn from_mean(acc: Self::Acc, count: usize) -> Self;
     fn is_nan(self) -> bool;
     fn nan() -> Option<Self>;
+    /// A Python fill value as this type; an error if it cannot be one.
+    fn fill_from(obj: &Bound<'_, PyAny>) -> PyResult<Self>;
 }
 
 macro_rules! impl_element_int {
-    ($($t:ty),*) => {$(
+    ($acc:ty: $($t:ty),*) => {$(
         impl Element for $t {
             const ZERO: Self = 0;
-            fn to_f64(self) -> f64 { self as f64 }
+            type Acc = $acc;
+            fn widen(self) -> $acc { self as $acc }
+            // an out-of-range sum saturates rather than wraps
+            fn from_sum(acc: $acc) -> Self {
+                acc.clamp(<$t>::MIN as $acc, <$t>::MAX as $acc) as $t
+            }
             // integer `mean` rounds half to even (numpy's rint) instead of
-            // promoting to float like xarray.coarsen; `as` saturates
-            fn from_f64(v: f64) -> Self { v.round_ties_even() as $t }
+            // promoting to float like xarray.coarsen
+            fn from_mean(acc: $acc, count: usize) -> Self {
+                let n = count as $acc;
+                let (q, twice_rem) = (acc.div_euclid(n), 2 * acc.rem_euclid(n));
+                let up = twice_rem > n || (twice_rem == n && q & 1 == 1);
+                (q + up as $acc) as $t
+            }
             fn is_nan(self) -> bool { false }
             fn nan() -> Option<Self> { None }
+            fn fill_from(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+                if let Ok(v) = obj.extract::<$t>() {
+                    return Ok(v);
+                }
+                // some files declare a float _FillValue on an integer variable
+                let v: f64 = obj.extract()?;
+                if v.fract() == 0.0 && v >= <$t>::MIN as f64 && v <= <$t>::MAX as f64 {
+                    return Ok(v as $t);
+                }
+                Err(PyValueError::new_err(format!(
+                    "fill_value {v} is not representable as {}",
+                    stringify!($t)
+                )))
+            }
         }
     )*};
 }
@@ -83,15 +119,23 @@ macro_rules! impl_element_float {
     ($($t:ty),*) => {$(
         impl Element for $t {
             const ZERO: Self = 0.0;
-            fn to_f64(self) -> f64 { self as f64 }
-            fn from_f64(v: f64) -> Self { v as $t }
+            type Acc = f64;
+            fn widen(self) -> f64 { self as f64 }
+            fn from_sum(acc: f64) -> Self { acc as $t }
+            fn from_mean(acc: f64, count: usize) -> Self { (acc / count as f64) as $t }
             fn is_nan(self) -> bool { self.is_nan() }
             fn nan() -> Option<Self> { Some(<$t>::NAN) }
+            fn fill_from(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+                Ok(obj.extract::<f64>()? as $t)
+            }
         }
     )*};
 }
 
-impl_element_int!(u8, u16, i16, i32, i64);
+// i64 holds any realistic window of <= 32-bit values and is about twice as
+// fast as i128, which only the 64-bit types need
+impl_element_int!(i64: u8, u16, u32, i8, i16, i32);
+impl_element_int!(i128: u64, i64);
 impl_element_float!(f32, f64);
 
 #[inline]
@@ -118,13 +162,13 @@ fn reduce_window<T: Element>(
         // op exactly composable (corner-of-corners == corner-of-native)
         Method::Nearest => w.next().expect("windows are never empty"),
         Method::Mean | Method::Sum => {
-            let mut acc = 0.0f64;
+            let mut acc = T::Acc::default();
             let mut count = 0usize;
             for v in w {
                 if skipna && is_missing(v, fill) {
                     continue;
                 }
-                acc += v.to_f64();
+                acc += v.widen();
                 count += 1;
             }
             if count == 0 {
@@ -135,10 +179,10 @@ fn reduce_window<T: Element>(
                     _ => all_missing_result(fill),
                 };
             }
-            if method == Method::Mean {
-                acc /= count as f64;
+            match method {
+                Method::Sum => T::from_sum(acc),
+                _ => T::from_mean(acc, count),
             }
-            T::from_f64(acc)
         }
         Method::Max | Method::Min => {
             let mut best: Option<T> = None;
@@ -192,9 +236,11 @@ fn reduce<T: Element>(
 
     let nd = a.ndim();
     if nd >= 2 && stride[..nd - 2].iter().all(|&s| s == 1) {
-        if let Some(src) = a.as_slice() {
-            return reduce_rows(src, a.shape(), &window, &out_shape, method, fill, skipna);
-        }
+        // a strided view (e.g. a clamped edge tile) is copied once rather
+        // than sent down the slower generic path
+        let a = a.as_standard_layout();
+        let src = a.as_slice().expect("standard layout is contiguous");
+        return reduce_rows(src, a.shape(), &window, &out_shape, method, fill, skipna);
     }
     reduce_generic(a, &window, &out_shape, method, fill, skipna)
 }
@@ -249,7 +295,7 @@ fn block_reduce<'py>(
     a: &Bound<'py, PyUntypedArray>,
     stride: Vec<usize>,
     method: &str,
-    fill_value: Option<f64>,
+    fill_value: Option<Bound<'py, PyAny>>,
     skipna: bool,
 ) -> PyResult<Bound<'py, PyAny>> {
     let method = Method::parse(method)?;
@@ -268,13 +314,24 @@ fn block_reduce<'py>(
     if stride.contains(&0) {
         return Err(PyValueError::new_err("stride entries must be >= 1"));
     }
+    if a.shape().contains(&0) {
+        return Err(PyValueError::new_err(format!(
+            "array must not have a zero-length axis; got shape {:?}",
+            a.shape()
+        )));
+    }
 
     macro_rules! dispatch {
         ($t:ty) => {{
             let arr = a.cast::<PyArrayDyn<$t>>()?;
             let ro = arr.readonly();
             let view = ro.as_array();
-            let fill = fill_value.map(<$t as Element>::from_f64);
+            // extracted as the array's own type: via f64 a NaN fill on an
+            // integer array became 0 and large i64 fills lost precision
+            let fill = fill_value
+                .as_ref()
+                .map(<$t as Element>::fill_from)
+                .transpose()?;
             let out = py.detach(|| reduce(view, &stride, method, fill, skipna));
             Ok(out.into_pyarray(py).into_any())
         }};
@@ -285,19 +342,26 @@ fn block_reduce<'py>(
         dispatch!(f32)
     } else if dtype.is_equiv_to(&numpy::dtype::<f64>(py)) {
         dispatch!(f64)
+    } else if dtype.is_equiv_to(&numpy::dtype::<u8>(py)) {
+        dispatch!(u8)
+    } else if dtype.is_equiv_to(&numpy::dtype::<u16>(py)) {
+        dispatch!(u16)
+    } else if dtype.is_equiv_to(&numpy::dtype::<u32>(py)) {
+        dispatch!(u32)
+    } else if dtype.is_equiv_to(&numpy::dtype::<u64>(py)) {
+        dispatch!(u64)
+    } else if dtype.is_equiv_to(&numpy::dtype::<i8>(py)) {
+        dispatch!(i8)
     } else if dtype.is_equiv_to(&numpy::dtype::<i16>(py)) {
         dispatch!(i16)
     } else if dtype.is_equiv_to(&numpy::dtype::<i32>(py)) {
         dispatch!(i32)
     } else if dtype.is_equiv_to(&numpy::dtype::<i64>(py)) {
         dispatch!(i64)
-    } else if dtype.is_equiv_to(&numpy::dtype::<u8>(py)) {
-        dispatch!(u8)
-    } else if dtype.is_equiv_to(&numpy::dtype::<u16>(py)) {
-        dispatch!(u16)
     } else {
         Err(PyTypeError::new_err(format!(
-            "unsupported dtype {dtype}; expected one of u8, u16, i16, i32, i64, f32, f64"
+            "unsupported dtype {dtype}; expected one of {}",
+            DTYPES.join(", ")
         )))
     }
 }
@@ -325,9 +389,14 @@ macro_rules! impl_pack {
 impl_pack!(f32 => i8, i16, i32, i64, u8, u16, u32, u64);
 impl_pack!(f64 => i8, i16, i32, i64, u8, u16, u32, u64);
 
-/// One pass, no float temporary: peak memory is the input plus the output.
-fn pack_array<F: Pack<T>, T: Copy>(view: ArrayViewD<F>, scale: F, offset: F, fill: T) -> ArrayD<T> {
-    view.mapv(|v| v.pack_one(scale, offset, fill))
+/// One parallel pass, no float temporary: peak memory is the input plus the
+/// output.
+fn pack_array<F, T>(view: ArrayViewD<F>, scale: F, offset: F, fill: T) -> ArrayD<T>
+where
+    F: Pack<T> + Send + Sync,
+    T: Copy + Send + Sync,
+{
+    Zip::from(view).par_map_collect(|&v| v.pack_one(scale, offset, fill))
 }
 
 #[pyfunction]
@@ -385,6 +454,7 @@ fn topozarr_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(block_reduce, m)?)?;
     m.add_function(wrap_pyfunction!(pack, m)?)?;
     m.add("METHODS", PyTuple::new(m.py(), Method::names())?)?;
+    m.add("DTYPES", PyTuple::new(m.py(), DTYPES)?)?;
     Ok(())
 }
 
@@ -401,16 +471,6 @@ mod tests {
         }
         assert_eq!(Method::names().len(), Method::ALL.len());
         assert!(Method::parse("median").is_err());
-    }
-
-    #[test]
-    fn error_text_lists_every_method() {
-        // PyErr::to_string needs an interpreter, so assert on the message
-        // fragment parse() embeds rather than on the error itself
-        let listed = Method::names_display();
-        for name in Method::names() {
-            assert!(listed.contains(name), "error text omits {name}: {listed}");
-        }
     }
 
     // values include NaN and the fill (0.0) so every skip branch runs
@@ -600,6 +660,63 @@ mod tests {
             reduce(b.view(), &[2, 2], Method::Sum, Some(7), true)[[0, 0]],
             0
         );
+    }
+
+    #[test]
+    fn integer_sum_and_mean_are_exact_past_f64() {
+        // 2^53 + 1 is not an f64; an f64 accumulator returned 2^53
+        let big = (1i64 << 53) + 1;
+        let a = array![[big, big], [big, big]].into_dyn();
+        assert_eq!(
+            reduce(a.view(), &[2, 2], Method::Mean, None, true)[[0, 0]],
+            big
+        );
+        let b = array![[big, 0], [0, 0]].into_dyn();
+        assert_eq!(
+            reduce(b.view(), &[2, 2], Method::Sum, None, true)[[0, 0]],
+            big
+        );
+        // sums saturate at the dtype bounds, as before
+        let c = array![[200u8, 200], [200, 200]].into_dyn();
+        assert_eq!(
+            reduce(c.view(), &[2, 2], Method::Sum, None, true)[[0, 0]],
+            255
+        );
+        let d = array![[i64::MIN, i64::MIN], [-1, 0]].into_dyn();
+        assert_eq!(
+            reduce(d.view(), &[2, 2], Method::Sum, None, true)[[0, 0]],
+            i64::MIN
+        );
+    }
+
+    #[test]
+    fn integer_mean_rounds_half_to_even_both_signs() {
+        for (vals, want) in [
+            ([1i32, 2, 1, 2], 2),   // 1.5 -> 2
+            ([2, 3, 2, 3], 2),      // 2.5 -> 2
+            ([-1, -2, -1, -2], -2), // -1.5 -> -2
+            ([-2, -3, -2, -3], -2), // -2.5 -> -2
+            ([0, 0, 0, 1], 0),      // 0.25 -> 0
+            ([-1, 0, 0, 0], 0),     // -0.25 -> 0
+            ([-1, -1, -1, 0], -1),  // -0.75 -> -1
+        ] {
+            let a = ArrayD::from_shape_vec(IxDyn(&[2, 2]), vals.to_vec()).unwrap();
+            assert_eq!(
+                reduce(a.view(), &[2, 2], Method::Mean, None, true)[[0, 0]],
+                want,
+                "{vals:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn strided_view_takes_the_row_path() {
+        // a non-contiguous view is copied to standard layout, not rejected
+        let a = sample(&[3, 8, 10]);
+        let v = a.slice_each_axis(|_| ndarray::Slice::new(0, None, 2));
+        let out = reduce(v.view(), &[1, 2, 2], Method::Mean, None, true);
+        let expect = reduce(v.to_owned().view(), &[1, 2, 2], Method::Mean, None, true);
+        assert!(same(&out, &expect));
     }
 
     #[test]

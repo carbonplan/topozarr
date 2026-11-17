@@ -1,5 +1,51 @@
 # Release notes
 
+## 0.4.0
+
+### Fixed
+
+- `Pyramid.write` raises on a dtype the kernel cannot coarsen (for example
+  `float16`) before it touches the store. It used to fail on the first
+  coarsened level, leaving level `0` and the root metadata behind.
+- A failed tile now stops the write. Queued tiles used to run to completion
+  before the error was raised.
+- A float variable whose `_FillValue` sits in its encoding (any source opened
+  with the default `mask_and_scale=True`) now uses NaN as its fill value on
+  every level. Level `0` used to hold NaN under a declared fill of the
+  encoding value while coarser levels held that value, and all-NaN level `0`
+  shards were written instead of skipped.
+- `block_reduce` raises `ValueError` on an array with a zero-length axis
+  instead of panicking.
+- `block_reduce` reads `fill_value` in the array's own dtype. A NaN fill on an
+  integer array used to become 0 and mask real zeros, and `int64` fills past
+  2^53 lost precision. A fill the dtype cannot hold now raises `ValueError`.
+- `create_pyramid(levels=True)` raises instead of building one level.
+
+### Added
+
+- `int8`, `uint32`, and `uint64` variables can be coarsened. This also covers
+  scaled integer sources stored in those dtypes, which packed correctly and
+  then failed in the kernel.
+- `topozarr_core.DTYPES` lists the dtypes the kernel accepts.
+
+### Changed
+
+- Integer `sum` and `mean` accumulate in integers, so `int64` and `uint64`
+  results are exact past 2^53. Other results are unchanged.
+- Edge tiles that are trimmed before the next reduction take the kernel's
+  fast path (about 7x faster on an 8192 x 8192 `float32` block), and `pack`
+  runs in parallel (about 2x).
+- Requires `topozarr-core==0.4.0`.
+
+### Removed
+
+- `Pyramid.write(keep_levels_in_memory=...)`, deprecated and ignored since
+  0.1.10.
+- `topozarr.engine.copy_array`, and the `skipna`, `skip_empty`, and
+  `max_workers` arguments of `topozarr.engine.downsample_level`. None were
+  part of the documented API or used by `write`; `downsample_level` now
+  requires an `executor`.
+
 ## 0.3.1
 
 ### Fixed

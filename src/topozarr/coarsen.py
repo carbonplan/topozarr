@@ -47,9 +47,8 @@ def _level_source_chunks(
 
 def _coarsen_coord(values: np.ndarray, factor: int) -> np.ndarray:
     """Mean of cell-center coordinates per window, trimming trailing partials."""
-    n = max(len(values) // factor, 1)
-    window = min(factor, len(values))
-    return values[: n * window].reshape(n, window).mean(axis=1)
+    n = len(values) // factor
+    return values[: n * factor].reshape(n, factor).mean(axis=1)
 
 
 def _coarsen_template(ds: xr.Dataset, x_dim: str, y_dim: str, step: int) -> xr.Dataset:
@@ -138,7 +137,7 @@ def _resolve_factors(
             levels += 1
 
     if levels is not None:
-        if not isinstance(levels, int) or levels < 1:
+        if not isinstance(levels, int) or isinstance(levels, bool) or levels < 1:
             raise ValueError(f"levels must be a positive int, got {levels!r}")
         return [2**i for i in range(levels)]
 
@@ -366,14 +365,14 @@ def create_pyramid(
 
     # _FillValue if declared; else NaN for floats (matches xarray's zarr
     # default and lets the engine skip all-fill regions). An encoding
-    # _FillValue next to scale_factor/add_offset is in packed space: the
-    # decoded data marks missing as NaN, and the packed sentinel may collide
-    # with a valid decoded value.
+    # _FillValue describes the stored form: xarray has already decoded it to
+    # NaN in a float variable, so using it would leave level 0 holding NaN
+    # under a different declared fill. Next to scale_factor/add_offset it is
+    # also in packed space and may collide with a valid decoded value.
     def _fill(da: xr.DataArray) -> float | int | None:
-        default = da.attrs.get(
-            "_FillValue", np.nan if np.issubdtype(da.dtype, np.floating) else None
-        )
-        if {"scale_factor", "add_offset"} & da.encoding.keys():
+        floating = np.issubdtype(da.dtype, np.floating)
+        default = da.attrs.get("_FillValue", np.nan if floating else None)
+        if floating or {"scale_factor", "add_offset"} & da.encoding.keys():
             return default
         return da.encoding.get("_FillValue", default)
 

@@ -29,7 +29,8 @@ If you need a different grid, reproject or regrid first, then pass the result to
     Three cases are written as floats: scaled integers without a `_FillValue`,
     `_Unsigned` variables, and integers that only have a `_FillValue` (for
     example, WorldCover `uint8`). Open these with `mask_and_scale=False` to
-    keep the integer dtype.
+    keep the integer dtype. Written as floats, they use NaN as the missing
+    value on every level.
 
 ## Progress and memory
 
