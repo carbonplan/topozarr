@@ -13,8 +13,12 @@ This page describes what `topozarr` does under the hood: how it plans a pyramid,
 
 | Field | Holds |
 |-------|-------|
+| `source` | The level `0` dataset the data is read from |
 | `level_templates` | One `xr.Dataset` per level |
+| `factors` | Downsampling factor of each level, relative to level `0` |
 | `encoding` | Chunk and shard sizes for each variable at each level |
+| `fill_values` | Missing-value marker for each variable |
+| `packing` | Scale, offset, fill, and stored dtype for scaled integer variables |
 | `attrs` | Root metadata: [multiscales](https://github.com/zarr-conventions/multiscales), [proj](https://github.com/zarr-conventions/proj), [spatial](https://github.com/zarr-conventions/spatial) ([layout](geozarr.md)) |
 
 There are two ways to turn the plan into data:
@@ -64,8 +68,10 @@ workers.
 - **Missing values:** NaN and `_FillValue` are skipped. A window with only
   missing values gives 0 for `sum` and the fill value (or NaN) for the other
   methods. `nearest` ignores both and copies the cell as is.
-- **Dtypes:** `u8`, `u16`, `i16`, `i32`, `i64`, `f32`, and `f64`. Integers
-  stay integers (unlike `xarray.coarsen`, which promotes them to float).
+- **Dtypes:** 8 to 64 bit signed and unsigned integers, `f32`, and `f64`
+  (`topozarr_core.DTYPES`). `write` raises on anything else before it
+  touches the store. Integers stay integers (unlike `xarray.coarsen`, which
+  promotes them to float), and integer `sum` and `mean` are exact.
 - **Shape:** matches `xarray.coarsen(boundary="trim")`, so partial windows at
   the trailing edges are dropped.
 

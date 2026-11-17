@@ -109,24 +109,16 @@ def _is_all_fill(block: np.ndarray, fill_value: Any) -> bool:
 def _write_regions(
     dst: zarr.Array,
     get_block: Callable[[Region], np.ndarray],
-    max_workers: int | None,
-    region_shape: tuple[int, ...] | None = None,
-    executor: ThreadPoolExecutor | None = None,
+    executor: ThreadPoolExecutor,
     on_region: Callable[[], None] | None = None,
     timer: RegionTimer | None = None,
-    skip_empty: bool = True,
 ) -> list[Future[None]]:
-    """Write every region of ``dst`` via ``get_block`` on a thread pool.
+    """Submit a write of every region of ``dst`` via ``get_block``.
 
-    With an external ``executor``, tasks are submitted and the pending futures
-    returned for the caller to drain; otherwise a pool of ``max_workers`` is
-    created, drained, and an empty list returned.
-
-    With ``skip_empty`` (default), regions whose block is entirely
-    ``dst.fill_value`` are not written. Besides saving the encode + upload,
-    this avoids zarr's delete-on-empty-chunk behavior, which issues a store
-    delete per all-fill shard even on a fresh array. Disable when ``dst``
-    may hold stale data that an all-fill write should clear.
+    Returns the pending futures for the caller to drain. Regions whose block
+    is entirely ``dst.fill_value`` are not written. Besides saving the encode
+    + upload, this avoids zarr's delete-on-empty-chunk behavior, which issues
+    a store delete per all-fill shard even on a fresh array.
     """
     fill_value = dst.fill_value
 
@@ -134,7 +126,7 @@ def _write_regions(
         t0 = perf_counter()
         block = get_block(region)
         t1 = perf_counter()
-        skipped = skip_empty and _is_all_fill(block, fill_value)
+        skipped = _is_all_fill(block, fill_value)
         if not skipped:
             dst[region] = block
         if timer is not None:
@@ -146,13 +138,7 @@ def _write_regions(
         if on_region is not None:
             on_region()
 
-    regions = shard_aligned_regions(dst, region_shape)
-    if executor is not None:
-        return [executor.submit(one, region) for region in regions]
-    with ThreadPoolExecutor(max_workers) as ex:
-        for _ in ex.map(one, regions):
-            pass  # drain to surface exceptions
-    return []
+    return [executor.submit(one, region) for region in shard_aligned_regions(dst)]
 
 
 def copy_region_shape(
@@ -175,58 +161,6 @@ def copy_region_shape(
     if math.prod(region) * itemsize > max_region_bytes:
         return shard
     return region
-
-
-def copy_array(
-    values: Any,
-    dst: zarr.Array,
-    *,
-    source_chunks: tuple[int, ...] | None = None,
-    max_region_bytes: int = DEFAULT_MAX_REGION_BYTES,
-    max_workers: int | None = None,
-    executor: ThreadPoolExecutor | None = None,
-    on_region: Callable[[], None] | None = None,
-    timer: RegionTimer | None = None,
-    skip_empty: bool = True,
-) -> list[Future[None]]:
-    """Write a region-indexable array into ``dst`` region by region.
-
-    ``values`` may be a numpy array or any lazy array supporting
-    tuple-of-slices indexing (e.g. ``xr.Variable`` backed by zarr/icechunk);
-    each region is materialized individually, keeping peak memory at
-    ``max_workers x region_size``. Pass ``source_chunks`` to widen regions to
-    the source chunk grid so each source chunk is decoded once.
-
-    For in-memory ``values`` (``np.ndarray``) the contiguity copy is skipped:
-    slicing returns a (possibly strided) view, and both the reduce kernel and
-    zarr setitem accept strided input, so copying would only waste memory.
-    """
-    shape = copy_region_shape(
-        dst.shards or dst.chunks,
-        dst.shape,
-        dst.dtype.itemsize,
-        source_chunks,
-        max_region_bytes,
-    )
-    if isinstance(values, np.ndarray):
-
-        def get_block(region: Region) -> np.ndarray:
-            return values[region]
-    else:
-
-        def get_block(region: Region) -> np.ndarray:
-            return np.ascontiguousarray(values[region])
-
-    return _write_regions(
-        dst,
-        get_block,
-        max_workers,
-        region_shape=shape,
-        executor=executor,
-        on_region=on_region,
-        timer=timer,
-        skip_empty=skip_empty,
-    )
 
 
 def _sub_regions(region: Region, grid: tuple[int, ...]) -> Iterator[Region]:
@@ -270,7 +204,7 @@ def write_tiles(
         for j, dst in enumerate(dsts):
             if j:
                 t0 = perf_counter()
-                out = block_reduce(block, strides[j], method, fill_value, True)
+                out = block_reduce(block, strides[j], method, fill_value)
                 # clamp to dst: a trailing partial window yields kernel output
                 # that the trimmed level shape drops
                 region = tuple(
@@ -311,13 +245,10 @@ def downsample_level(
     *,
     stride: tuple[int, ...],
     method: str,
+    executor: ThreadPoolExecutor,
     fill_value: float | int | None = None,
-    skipna: bool = True,
-    max_workers: int | None = None,
-    executor: ThreadPoolExecutor | None = None,
     on_region: Callable[[], None] | None = None,
     timer: RegionTimer | None = None,
-    skip_empty: bool = True,
 ) -> list[Future[None]]:
     """Block-reduce ``src`` into ``dst`` by integer ``stride`` per axis.
 
@@ -337,17 +268,9 @@ def downsample_level(
         )
         block = np.ascontiguousarray(src[in_sel])
         t0 = perf_counter()
-        out = block_reduce(block, stride, method, fill_value, skipna)
+        out = block_reduce(block, stride, method, fill_value)
         if timer is not None:
             timer.add(reduce_s=perf_counter() - t0)
         return out
 
-    return _write_regions(
-        dst,
-        get_block,
-        max_workers,
-        executor=executor,
-        on_region=on_region,
-        timer=timer,
-        skip_empty=skip_empty,
-    )
+    return _write_regions(dst, get_block, executor, on_region=on_region, timer=timer)

@@ -6,7 +6,7 @@ def block_reduce(
     a: npt.NDArray[Any],
     stride: list[int] | tuple[int, ...],
     method: str,
-    fill_value: float | None = None,
+    fill_value: float | int | None = None,
     skipna: bool = True,
 ) -> npt.NDArray[Any]: ...
 def pack(
@@ -17,6 +17,9 @@ def pack(
     dtype: str,
 ) -> npt.NDArray[Any]:
     """CF-pack a float32/float64 array to the integer dtype named by `dtype`."""
+
+DTYPES: tuple[str, ...]
+"""numpy dtype names `block_reduce` accepts (native byte order)."""
 
 METHODS: tuple[str, ...]
 """Coarsening methods this kernel implements, in `block_reduce`'s `method` order."""

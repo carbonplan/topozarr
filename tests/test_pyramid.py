@@ -455,12 +455,6 @@ def _read_level(store: zarr.storage.MemoryStore, lvl: int, name: str) -> np.ndar
     return root[f"{lvl}/{name}"][:]
 
 
-def test_keep_levels_in_memory_deprecated(create_dataset):
-    pyramid = create_pyramid(create_dataset(nx=16, ny=16), levels=2)
-    with pytest.warns(DeprecationWarning, match="keep_levels_in_memory"):
-        pyramid.write(zarr.storage.MemoryStore(), keep_levels_in_memory=True)
-
-
 def test_as_datatree_matches_native(create_dataset):
     ds = create_dataset(nx=16, ny=16)
     pyramid = create_pyramid(ds, levels=3)
@@ -1126,3 +1120,89 @@ def test_levels_drop_stale_root_geozarr_attrs(create_dataset):
         assert [c["name"] for c in attrs["zarr_conventions"]] == ["proj", "spatial"]
         assert "multiscales" not in attrs
         assert attrs["title"] == "keep"
+
+
+def _grid(data: np.ndarray, **attrs) -> xr.Dataset:
+    ny, nx = data.shape[-2:]
+    ds = xr.Dataset(
+        {"v": (("y", "x"), data, attrs)},
+        coords={"x": np.arange(float(nx)), "y": np.arange(float(ny))},
+    )
+    return ds.proj.assign_crs(spatial_ref="EPSG:4326")
+
+
+@pytest.mark.parametrize("dtype", ["i1", "u4", "u8"])
+def test_write_small_and_wide_integer_dtypes(dtype):
+    data = np.arange(64, dtype=dtype).reshape(8, 8)
+    store = zarr.storage.MemoryStore()
+    create_pyramid(_grid(data), levels=2, method="max").write(store)
+    np.testing.assert_array_equal(
+        zarr.open_array(store, path="1/v")[:],
+        data.reshape(4, 2, 4, 2).max(axis=(1, 3)),
+        strict=True,
+    )
+
+
+def test_write_rejects_unsupported_dtype_before_touching_store():
+    pyramid = create_pyramid(_grid(np.ones((8, 8), "f2")), levels=2)
+    store = zarr.storage.MemoryStore()
+    with pytest.raises(TypeError, match="float16.*cannot coarsen"):
+        pyramid.write(store)
+    assert store._store_dict == {}
+    # the xarray path has no kernel dtype limit
+    assert pyramid.as_datatree()["1"]["v"].dtype == np.dtype("f2")
+
+
+def test_write_stops_after_first_failed_tile(monkeypatch):
+    import itertools
+
+    from topozarr import engine
+
+    calls = itertools.count()
+
+    def boom(*args, **kwargs):
+        if next(calls) == 0:
+            raise RuntimeError("boom")
+        return np.zeros((16, 16), "f4")
+
+    monkeypatch.setattr(engine, "block_reduce", boom)
+    pyramid = create_pyramid(
+        _grid(np.ones((1024, 1024), "f4")),
+        levels=2,
+        target_chunk_bytes=32 * 32 * 4,
+        chunks_per_shard=1,
+    )
+    for lvl, n in (("/0", 32), ("/1", 16)):
+        pyramid.encoding[lvl]["v"] = {"chunks": (n, n), "shards": (n, n)}
+    plan = pyramid.summary(max_workers=2)
+    assert plan["tile_k"] == 1 and plan["levels"]["1"]["regions"] == 1024
+    with pytest.raises(RuntimeError, match="boom"):
+        pyramid.write(zarr.storage.MemoryStore(), max_workers=2)
+    # queued tiles are cancelled; only those already running may finish
+    assert next(calls) < 200
+
+
+def test_masked_integer_source_has_one_missing_marker():
+    # int + _FillValue only, opened decoded: float data, missing as NaN. The
+    # encoding sentinel must not become the declared fill of a NaN-marked array.
+    raw = np.arange(256, dtype="i2").reshape(16, 16)
+    raw[:8] = -9999
+    src = zarr.storage.MemoryStore()
+    _grid(raw, _FillValue=-9999).drop_vars("spatial_ref").to_zarr(
+        src, zarr_format=3, consolidated=False
+    )
+    decoded = xr.open_zarr(src, consolidated=False, chunks=None)
+    assert decoded.v.encoding["_FillValue"] == -9999
+    pyramid = create_pyramid(decoded.proj.assign_crs(spatial_ref="EPSG:4326"), levels=2)
+    out = zarr.storage.MemoryStore()
+    pyramid.write(out)
+    for lvl in ("0", "1"):
+        arr = zarr.open_array(out, path=f"{lvl}/v")
+        assert np.isnan(arr.fill_value)
+        assert np.isnan(arr[: arr.shape[0] // 2]).all()
+        assert not (arr[:] == -9999).any()
+
+
+def test_levels_rejects_bool(create_dataset):
+    with pytest.raises(ValueError, match="levels must be a positive int"):
+        create_pyramid(create_dataset(), levels=True)

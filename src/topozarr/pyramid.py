@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib.util
 import math
 import os
-import warnings
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import AbstractContextManager, nullcontext
@@ -16,7 +15,7 @@ import xarray as xr
 import zarr
 import zarr.errors
 import zarr.storage
-from topozarr_core import METHODS, pack
+from topozarr_core import DTYPES, METHODS, pack
 
 from .chunking import source_chunks
 from .engine import (
@@ -410,7 +409,6 @@ class Pyramid:
         max_region_bytes: int = DEFAULT_MAX_REGION_BYTES,
         progress: bool = False,
         stats: bool = False,
-        keep_levels_in_memory: bool | None = None,
     ) -> dict[str, Any] | None:
         """Compute and write pyramid levels to a Zarr store.
 
@@ -452,8 +450,6 @@ class Pyramid:
                 read/reduce/write seconds (summed across threads). The tile
                 pass is reported as one entry under level k, its
                 ``region_shapes`` being the level-0 tile shapes.
-            keep_levels_in_memory: Deprecated and ignored. The tile pass
-                produces levels 0..k without re-reads or level buffers.
         Examples:
             Write all levels to a local store:
 
@@ -474,6 +470,16 @@ class Pyramid:
 
         write_levels = self._write_levels(levels)
         coarsened_vars = self._coarsened_vars()
+        # before the store is touched: an unsupported dtype would otherwise
+        # surface from block_reduce with level 0 already written
+        for name in coarsened_vars:
+            dtype = self.level_templates[0][name].dtype
+            if dtype.name not in DTYPES or not dtype.isnative:
+                raise TypeError(
+                    f"variable {name!r} has dtype {dtype!s}, which the kernel "
+                    f"cannot coarsen (supported, native byte order: "
+                    f"{', '.join(DTYPES)}). Cast it first, or use as_datatree."
+                )
 
         if mode == "w" and set(write_levels) != set(self.level_templates):
             # mode="w" truncates the store, so a partial write over existing
@@ -489,14 +495,6 @@ class Pyramid:
                     "store, deleting the levels not being rewritten; pass "
                     "mode='a' to preserve them"
                 )
-
-        if keep_levels_in_memory is not None:
-            warnings.warn(
-                "keep_levels_in_memory is deprecated and ignored: levels are "
-                "written from shared level-0 tiles without re-reads",
-                DeprecationWarning,
-                stacklevel=2,
-            )
 
         plan = self.summary(
             levels=write_levels,
@@ -555,11 +553,10 @@ class Pyramid:
                 root[str(lvl)].attrs.put({**kept, **level_group_attrs(self.attrs, lvl)})
 
         all_stats: dict[str, Any] = {}
-        pipeline = _codec_pipeline(store)
-        pipeline.__enter__()
         t_level = perf_counter()
         timer = None
-        try:
+        # tqdm closes on exit
+        with _codec_pipeline(store), nullcontext() if pbar is None else pbar:
             for lvl in write_levels:
                 # the tile pass (levels 0..tile_k) is timed as one level
                 if lvl == 0 or lvl > tile_k:
@@ -623,8 +620,14 @@ class Pyramid:
                             )
                         )
                     ]
-                    for future in futures:
-                        future.result()
+                    try:
+                        for future in futures:
+                            future.result()
+                    except BaseException:
+                        # fail fast: without this the pool exit runs every
+                        # queued tile before the error surfaces
+                        ex.shutdown(cancel_futures=True)
+                        raise
 
                 if timer is not None:
                     all_stats[str(lvl)] = {
@@ -633,10 +636,6 @@ class Pyramid:
                         "wall_s": round(perf_counter() - t_level, 3),
                         **timer.as_dict(),
                     }
-        finally:
-            pipeline.__exit__(None, None, None)
-            if pbar is not None:
-                pbar.close()
         return all_stats if stats else None
 
     def _write_var(
@@ -756,7 +755,14 @@ class Pyramid:
                 da = da.fillna(fill)
             if np.issubdtype(dtype, np.integer):
                 info = np.iinfo(dtype)
-                da = da.round().clip(info.min, info.max)
+                # 64-bit bounds are not f8-representable: iinfo.max rounds up
+                # past the dtype, so clip to the nearest f8 inside the range
+                hi = (
+                    np.nextafter(float(info.max), 0.0)
+                    if dtype.itemsize == 8
+                    else info.max
+                )
+                da = da.round().clip(info.min, hi)
             restored[str(name)] = da.astype(dtype)
         return ds.assign(restored)
 
